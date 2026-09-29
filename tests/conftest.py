@@ -1,13 +1,19 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
+from app.core.config import Settings
 from app.models.pdf_document import PdfDocument
 
 
 @pytest.fixture(autouse=True)
 def entorno_de_test(monkeypatch):
-    """Provee la configuración para que la suite no dependa de un .env presente."""
+    """Provee la configuración de la suite desde el entorno.
+
+    Ignorar el .env es lo que hace la suite realmente hermética: sin esto, el archivo
+    de configuración local de quien desarrolla cambiaría el resultado de los tests.
+    """
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
     monkeypatch.setenv("MONGO_URI", "mongodb://localhost:27017")
     monkeypatch.setenv("MONGO_DATABASE", "pdfs_test")
     monkeypatch.setenv("MONGO_COLLECTION", "pdfs")
@@ -27,8 +33,8 @@ def documento():
             "texto": "Contenido extraído del PDF",
             "tamano_bytes": 245760,
             "paginas": 3,
-            "created_at": datetime(2026, 9, 14, 18, 0, 0, tzinfo=timezone.utc),
-            "updated_at": datetime(2026, 9, 14, 18, 0, 0, tzinfo=timezone.utc),
+            "created_at": datetime(2026, 9, 14, 18, 0, 0, tzinfo=UTC),
+            "updated_at": datetime(2026, 9, 14, 18, 0, 0, tzinfo=UTC),
         }
         return PdfDocument(**{**valores, **campos})
 
