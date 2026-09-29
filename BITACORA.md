@@ -227,6 +227,21 @@ compensación SAGA no le aplican —corresponden al `orquestador`—. Lo que sí
 verificado: compatibilidad con el contrato compartido, Redis HIT y MISS, y MongoDB, todo
 comprobado contra el stack real levantado con Docker (ver paso 8).
 
+### 2026-09-29 — Cierre: verificación desde cero
+
+Con `docker compose down -v` se borraron los volúmenes y se levantó el stack completo de
+nuevo, para reproducir la experiencia de alguien que clona el repositorio por primera vez.
+Se ejecutaron los pasos del README en orden, y todos pasaron:
+
+1. `GET /health` → `{"status":"ok"}`.
+2. Documento de prueba insertado en MongoDB.
+3. Las tres consultas del contrato devuelven el documento, con `created_at` en
+   `2026-09-14T18:00:00Z`.
+4. Redis quedó con las cuatro claves de caché.
+5. `GET /pdf/no-existe` → 404 y `GET /pdf?limit=0` → 400.
+
+El microservicio está terminado según el alcance del contrato `microservicios-pdf` v1.0.0.
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
