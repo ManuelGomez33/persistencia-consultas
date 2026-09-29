@@ -30,7 +30,7 @@ la implementación mínima que lo hace pasar (commit `feat:`).
 | 2 | Modelos de dominio y schemas Pydantic | #6 | Hecho |
 | 3 | Repository abstracto + InMemoryRepository | #7 | Hecho |
 | 4 | Reglas de negocio (service de consultas) | #8 | Hecho |
-| 5 | Caché cache-aside delante de la base | #8 | Pendiente |
+| 5 | Caché cache-aside delante de la base | #8 | Hecho |
 | 6 | Endpoints HTTP, `/health` y correlation ID | #9 | Pendiente |
 | 7 | Adaptadores reales: MongoDB y Redis | #7 | Pendiente |
 | 8 | Dockerfile y docker-compose | #11 | Pendiente |
@@ -108,6 +108,27 @@ Verificar con:
 uv run pytest tests/unit/test_consulta_service.py -v
 ```
 
+### 2026-09-29 — Paso 5: caché cache-aside (issue #8)
+
+`app/core/cached_repository.py` implementa `CachedPdfRepository`, que envuelve a otro
+`PdfRepository`. Ante una consulta busca primero en la caché; si no está (MISS) delega en
+el repositorio envuelto y guarda el resultado con el TTL configurado.
+
+Claves usadas: `pdf:id:{id}`, `pdf:checksum:{checksum}`, `pdf:list:{limit}:{offset}` y
+`pdf:total`.
+
+`app/core/cache.py` define el puerto y `app/core/in_memory_cache.py` la implementación que
+usan los tests.
+
+La suite del repositorio (`tests/unit/test_pdf_repository.py`) corre parametrizada contra
+las dos implementaciones, lo que demuestra que son intercambiables.
+
+Verificar con:
+
+```bash
+uv run pytest tests/unit/test_cached_repository.py tests/unit/test_pdf_repository.py -v
+```
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
@@ -123,6 +144,17 @@ uv run pytest tests/unit/test_consulta_service.py -v
   pero no lo lista entre los campos obligatorios, así que el modelo lo admite ausente.
 - **Listados ordenados por `created_at` descendente.** Una paginación sin orden definido
   puede repetir o saltear documentos entre páginas. Ambos adaptadores respetan ese orden.
+- **La caché es un decorador del repositorio, no lógica del service.** Poner el
+  cache-aside dentro de `ConsultaPdfService` habría mezclado una optimización de
+  infraestructura con las reglas de negocio; ponerlo dentro del adaptador de Mongo habría
+  atado la caché a esa base en particular. Como decorador, se puede quitar del cableado y
+  el servicio sigue funcionando.
+- **Los documentos inexistentes no se cachean.** Guardar un "no existe" haría invisible
+  durante todo el TTL a un documento creado por `persistencia-actualizaciones` justo
+  después de la consulta.
+- **Claves de listado por `limit` y `offset` explícitos.** El contrato sugiere
+  `pdf:list:{hash-de-parametros}`; con solo dos parámetros, escribirlos en la clave es
+  equivalente y deja la caché legible al inspeccionar Redis.
 - **`limit` tope 100.** El contrato no fija un máximo. Sin tope, un cliente puede pedir el
   listado completo en una sola llamada y forzar al servicio a materializar toda la
   colección. Se rechaza con `VALIDATION_ERROR` en lugar de recortar en silencio, para que
