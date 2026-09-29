@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from motor.motor_asyncio import AsyncIOMotorCollection
 
@@ -42,4 +42,4 @@ def documento_desde_mongo(datos: dict) -> PdfDocument:
 
 
 def _en_utc(momento: datetime) -> datetime:
-    return momento.replace(tzinfo=timezone.utc) if momento.tzinfo is None else momento
+    return momento.replace(tzinfo=UTC) if momento.tzinfo is None else momento

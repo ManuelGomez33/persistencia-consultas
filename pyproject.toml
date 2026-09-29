@@ -28,5 +28,11 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+# UP046 propone la sintaxis de genéricos de PEP 695 (`class Repository[T]`). Se mantiene
+# `Generic[T]` porque es la forma del patrón Repository que fija la metodología del
+# proyecto en CLAUDE.md, y ambas expresan exactamente lo mismo.
+ignore = ["UP046"]
+
 [tool.black]
 line-length = 100
