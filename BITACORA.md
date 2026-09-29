@@ -35,7 +35,7 @@ la implementación mínima que lo hace pasar (commit `feat:`).
 | 7 | Endpoints HTTP, `/health` y correlation ID | #9 | Hecho |
 | 8 | Dockerfile y docker-compose | #11 | Hecho |
 | 9 | Documentación de uso e integración | #12 | Hecho |
-| 10 | Verificación de calidad final | #13 | Pendiente |
+| 10 | Verificación de calidad final | #13 | Hecho |
 
 Los issues #5, #10 y #14 (tests unitarios, integración HTTP y validación de arquitectura)
 no son pasos aparte: se cumplen dentro de cada ciclo, porque el test siempre va primero.
@@ -193,6 +193,39 @@ servicio aislado, así que quedó advertido en el README.
 
 El README quedó con: instalación, ejecución local y con Docker, variables, endpoints,
 errores, pasos de verificación, decisiones técnicas y deuda técnica.
+
+### 2026-09-29 — Paso 10: verificación de calidad (issues #13 y #14)
+
+Resultados de la verificación completa:
+
+| Chequeo | Comando | Resultado |
+|---|---|---|
+| Suite de tests | `uv run pytest -v` | 60 en verde |
+| Hermeticidad | `mv .env .env.bak && uv run pytest` | 60 en verde sin `.env` |
+| Linter | `uv run ruff check app/ tests/` | sin advertencias |
+| Formato | `uv run black --check app/ tests/` | 35 archivos sin cambios |
+| Cobertura | `uv run pytest --cov=app` | 94 % |
+| Secretos versionados | `git ls-files \| grep -E "\.(env\|pyc)$"` | vacío |
+
+Revisión manual:
+
+- **Imports entre capas:** `services/` no importa `fastapi`; `controllers/` no importa
+  Motor, pymongo ni redis; `models/` no importa Pydantic.
+- **Lógica duplicada:** las dos búsquedas del service comparten `_asegurar_encontrado`,
+  las del repositorio con caché comparten `_documento_cacheado` y las de Mongo comparten
+  `_buscar_uno`.
+- **Símbolos sin uso:** ninguno. Los cinco que no tienen llamador directo
+  (`buscar_por_id`, `buscar_por_checksum`, los dos handlers de excepciones y el middleware
+  de correlation ID) los invoca FastAPI a través de sus decoradores.
+- **Cobertura:** el 6 % sin cubrir corresponde exactamente al seam declarado — las
+  llamadas directas a Motor y Redis y el cableado de producción. No hay reglas de negocio
+  sin test.
+
+Sobre el issue #14 (validar integración con la arquitectura completa): este servicio **no
+hace llamadas salientes a otros microservicios**, así que los puntos de timeouts, retry y
+compensación SAGA no le aplican —corresponden al `orquestador`—. Lo que sí le aplica está
+verificado: compatibilidad con el contrato compartido, Redis HIT y MISS, y MongoDB, todo
+comprobado contra el stack real levantado con Docker (ver paso 8).
 
 ## Decisiones técnicas
 
