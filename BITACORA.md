@@ -32,7 +32,7 @@ la implementación mínima que lo hace pasar (commit `feat:`).
 | 4 | Reglas de negocio (service de consultas) | #8 | Hecho |
 | 5 | Caché cache-aside delante de la base | #8 | Hecho |
 | 6 | Adaptadores reales: MongoDB y Redis | #7 | Hecho |
-| 7 | Endpoints HTTP, `/health` y correlation ID | #9 | Pendiente |
+| 7 | Endpoints HTTP, `/health` y correlation ID | #9 | Hecho |
 | 8 | Dockerfile y docker-compose | #11 | Pendiente |
 | 9 | Documentación de uso e integración | #12 | Pendiente |
 | 10 | Verificación de calidad final | #13 | Pendiente |
@@ -146,6 +146,28 @@ Verificar con:
 uv run pytest tests/unit/test_mongo_repository.py -v
 ```
 
+### 2026-09-29 — Paso 7: endpoints HTTP (issue #9)
+
+La aplicación ya arranca y responde. Componentes:
+
+- `app/controllers/pdf_controller.py` — `GET /pdf`, `GET /pdf/{id}`,
+  `GET /pdf/checksum/{checksum}`.
+- `app/controllers/health_controller.py` — `GET /health`.
+- `app/schemas/error.py` — el formato de error compartido.
+- `app/core/composition.py` — el único lugar donde se eligen las implementaciones
+  concretas (Mongo, Redis). Es lo que los tests reemplazan con `dependency_overrides`.
+- `app/main.py` — ensamblado, middleware de `X-Correlation-ID` y handlers de excepciones.
+
+Comprobado a mano contra el servicio levantado: `/health` responde
+`{"status":"ok"}` con la cabecera `X-Correlation-ID`, y `/pdf` sin las bases levantadas
+devuelve `INTERNAL_ERROR` con el formato del contrato en lugar de un error del framework.
+
+Verificar con:
+
+```bash
+uv run pytest tests/integration -v
+```
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
@@ -161,6 +183,9 @@ uv run pytest tests/unit/test_mongo_repository.py -v
   pero no lo lista entre los campos obligatorios, así que el modelo lo admite ausente.
 - **Listados ordenados por `created_at` descendente.** Una paginación sin orden definido
   puede repetir o saltear documentos entre páginas. Ambos adaptadores respetan ese orden.
+- **El mensaje de los errores 500 es genérico.** El detalle del fallo interno puede
+  revelar la topología del sistema (URIs, nombres de host). La trazabilidad se resuelve con
+  el `correlation_id`, que sí viaja al cliente y permite ubicar el caso en los logs.
 - **La caché es un decorador del repositorio, no lógica del service.** Poner el
   cache-aside dentro de `ConsultaPdfService` habría mezclado una optimización de
   infraestructura con las reglas de negocio; ponerlo dentro del adaptador de Mongo habría
