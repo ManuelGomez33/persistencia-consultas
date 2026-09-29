@@ -1,25 +1,10 @@
 import json
-from datetime import datetime, timezone
 
-from app.models.pdf_document import PdfDocument
 from app.schemas.pdf import PdfDocumentResponse, PdfListResponse
 
 
-def un_documento() -> PdfDocument:
-    return PdfDocument(
-        id="8f6f7c3e-12d5-4f57-9c6c-123456789abc",
-        nombre="contrato.pdf",
-        checksum="a7f5f35426b927411fc9231b56382173",
-        texto="Contenido extraído del PDF",
-        tamano_bytes=245760,
-        paginas=3,
-        created_at=datetime(2026, 9, 14, 18, 0, 0, tzinfo=timezone.utc),
-        updated_at=datetime(2026, 9, 14, 18, 0, 0, tzinfo=timezone.utc),
-    )
-
-
-def test_response_se_construye_desde_el_modelo_de_dominio():
-    respuesta = PdfDocumentResponse.from_domain(un_documento())
+def test_response_se_construye_desde_el_modelo_de_dominio(documento):
+    respuesta = PdfDocumentResponse.from_domain(documento())
 
     assert respuesta.id == "8f6f7c3e-12d5-4f57-9c6c-123456789abc"
     assert respuesta.nombre == "contrato.pdf"
@@ -29,8 +14,8 @@ def test_response_se_construye_desde_el_modelo_de_dominio():
     assert respuesta.paginas == 3
 
 
-def test_response_serializa_las_fechas_en_iso_8601_utc():
-    respuesta = PdfDocumentResponse.from_domain(un_documento())
+def test_response_serializa_las_fechas_en_iso_8601_utc(documento):
+    respuesta = PdfDocumentResponse.from_domain(documento())
 
     serializado = json.loads(respuesta.model_dump_json())
 
@@ -38,9 +23,9 @@ def test_response_serializa_las_fechas_en_iso_8601_utc():
     assert serializado["updated_at"] == "2026-09-14T18:00:00Z"
 
 
-def test_listado_respeta_la_forma_del_contrato():
+def test_listado_respeta_la_forma_del_contrato(documento):
     listado = PdfListResponse(
-        items=[PdfDocumentResponse.from_domain(un_documento())],
+        items=[PdfDocumentResponse.from_domain(documento())],
         total=1,
         limit=20,
         offset=0,
