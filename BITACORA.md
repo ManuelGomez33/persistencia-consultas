@@ -33,8 +33,8 @@ la implementación mínima que lo hace pasar (commit `feat:`).
 | 5 | Caché cache-aside delante de la base | #8 | Hecho |
 | 6 | Adaptadores reales: MongoDB y Redis | #7 | Hecho |
 | 7 | Endpoints HTTP, `/health` y correlation ID | #9 | Hecho |
-| 8 | Dockerfile y docker-compose | #11 | Pendiente |
-| 9 | Documentación de uso e integración | #12 | Pendiente |
+| 8 | Dockerfile y docker-compose | #11 | Hecho |
+| 9 | Documentación de uso e integración | #12 | Hecho |
 | 10 | Verificación de calidad final | #13 | Pendiente |
 
 Los issues #5, #10 y #14 (tests unitarios, integración HTTP y validación de arquitectura)
@@ -167,6 +167,32 @@ Verificar con:
 ```bash
 uv run pytest tests/integration -v
 ```
+
+### 2026-09-29 — Pasos 8 y 9: Docker y documentación (issues #11 y #12)
+
+`Dockerfile` (usuario sin privilegios, healthcheck, dependencias con uv) y
+`docker-compose.yml` con MongoDB y Redis, ambos con volumen nombrado y healthcheck.
+
+**Verificado de punta a punta contra el stack real**, no solo con tests:
+
+- Los tres contenedores levantan y quedan `healthy`.
+- `GET /health` → `{"status":"ok"}` con cabecera `X-Correlation-ID`.
+- Insertado un documento en MongoDB, los tres endpoints de consulta lo devuelven con las
+  fechas en el formato del contrato (`2026-09-14T18:00:00Z`).
+- Redis queda con las cuatro claves: `pdf:id:...`, `pdf:checksum:...`, `pdf:list:20:0`,
+  `pdf:total`. Esa es la evidencia del cache-aside.
+- `GET /pdf/no-existe` → 404 `RESOURCE_NOT_FOUND`; `GET /pdf?limit=0` → 400
+  `VALIDATION_ERROR` con `details`.
+
+Durante esta verificación apareció un comportamiento que conviene tener presente:
+consultar `GET /pdf` con la base vacía deja el listado vacío cacheado durante todo el TTL,
+así que un documento insertado después no aparece hasta que la entrada vence. Es el
+comportamiento esperado de una caché con TTL —quien invalida al escribir es
+`persistencia-actualizaciones`, según su propio contrato— pero desorienta al probar este
+servicio aislado, así que quedó advertido en el README.
+
+El README quedó con: instalación, ejecución local y con Docker, variables, endpoints,
+errores, pasos de verificación, decisiones técnicas y deuda técnica.
 
 ## Decisiones técnicas
 
