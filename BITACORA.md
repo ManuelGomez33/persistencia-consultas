@@ -31,8 +31,8 @@ la implementación mínima que lo hace pasar (commit `feat:`).
 | 3 | Repository abstracto + InMemoryRepository | #7 | Hecho |
 | 4 | Reglas de negocio (service de consultas) | #8 | Hecho |
 | 5 | Caché cache-aside delante de la base | #8 | Hecho |
-| 6 | Endpoints HTTP, `/health` y correlation ID | #9 | Pendiente |
-| 7 | Adaptadores reales: MongoDB y Redis | #7 | Pendiente |
+| 6 | Adaptadores reales: MongoDB y Redis | #7 | Hecho |
+| 7 | Endpoints HTTP, `/health` y correlation ID | #9 | Pendiente |
 | 8 | Dockerfile y docker-compose | #11 | Pendiente |
 | 9 | Documentación de uso e integración | #12 | Pendiente |
 | 10 | Verificación de calidad final | #13 | Pendiente |
@@ -129,6 +129,23 @@ Verificar con:
 uv run pytest tests/unit/test_cached_repository.py tests/unit/test_pdf_repository.py -v
 ```
 
+### 2026-09-29 — Paso 6: adaptadores de MongoDB y Redis (issue #7)
+
+Se adelantó este paso, que en el plan original iba después de los endpoints, para que al
+armar `main.py` el cableado sea el real y no haya que pasar por una implementación
+provisoria.
+
+- `app/core/database.py` — creación de los clientes de Mongo y Redis a partir de `Settings`.
+- `app/core/mongo_repository.py` — `MongoPdfRepository`, más `documento_desde_mongo()`,
+  que traduce el documento de la base a la entidad de dominio.
+- `app/core/redis_cache.py` — `RedisCache`, que implementa el puerto `Cache`.
+
+Verificar con:
+
+```bash
+uv run pytest tests/unit/test_mongo_repository.py -v
+```
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
@@ -173,4 +190,12 @@ uv run pytest tests/unit/test_cached_repository.py tests/unit/test_pdf_repositor
 
 ## Deuda técnica
 
-_Se registra acá todo lo que se decide no hacer, con el motivo._
+- **Los adaptadores de MongoDB y Redis no tienen tests automatizados.** `MongoPdfRepository`
+  y `RedisCache` son envoltorios delgados sobre Motor y `redis.asyncio`: cada método es una
+  llamada directa al driver. Testearlos exigiría levantar contenedores reales, lo que
+  rompería la regla de que la suite corra sin red ni bases de datos. Lo único con lógica
+  propia —la traducción del documento de Mongo a la entidad de dominio— sí está cubierto
+  en `tests/unit/test_mongo_repository.py`. Se cubrirían con un test de integración contra
+  un contenedor efímero.
+- **La caché no simula vencimiento en los tests.** `InMemoryCache` guarda sin expirar: el
+  TTL es responsabilidad de Redis y no hay reglas propias que verificar.
