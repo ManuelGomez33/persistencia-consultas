@@ -27,7 +27,7 @@ la implementación mínima que lo hace pasar (commit `feat:`).
 |---|---|---|---|
 | 0 | Estructura inicial de n-capas | #3 | Hecho |
 | 1 | Configuración con Pydantic Settings | #4 | Hecho |
-| 2 | Modelos de dominio y schemas Pydantic | #6 | Pendiente |
+| 2 | Modelos de dominio y schemas Pydantic | #6 | Hecho |
 | 3 | Repository abstracto + InMemoryRepository | #7 | Pendiente |
 | 4 | Reglas de negocio (service de consultas) | #8 | Pendiente |
 | 5 | Caché cache-aside delante de la base | #8 | Pendiente |
@@ -63,6 +63,21 @@ Verificar con:
 uv run pytest tests/unit/test_config.py -v
 ```
 
+### 2026-09-29 — Paso 2: modelo de dominio y schemas (issue #6)
+
+`app/models/pdf_document.py` define `PdfDocument`, una dataclass inmutable con los campos
+del contrato compartido. No usa Pydantic ni decoradores de persistencia: es la entidad
+interna, y la capa de negocio trabaja con ella.
+
+`app/schemas/pdf.py` define `PdfDocumentResponse` y `PdfListResponse`, que son el contrato
+público de la API. `from_domain()` traduce de la entidad al schema en un solo lugar.
+
+Verificar con:
+
+```bash
+uv run pytest tests/unit/test_schemas.py -v
+```
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
@@ -74,6 +89,8 @@ uv run pytest tests/unit/test_config.py -v
 - **Settings sin valores por defecto.** Un default para `MONGO_URI` haría que un error de
   configuración pase desapercibido y el servicio apunte a una base equivocada en silencio.
   Es preferible que falle al arrancar.
+- **`paginas` es opcional.** El contrato compartido lo muestra en el ejemplo de documento
+  pero no lo lista entre los campos obligatorios, así que el modelo lo admite ausente.
 
 ## Deuda técnica
 
