@@ -28,7 +28,7 @@ la implementación mínima que lo hace pasar (commit `feat:`).
 | 0 | Estructura inicial de n-capas | #3 | Hecho |
 | 1 | Configuración con Pydantic Settings | #4 | Hecho |
 | 2 | Modelos de dominio y schemas Pydantic | #6 | Hecho |
-| 3 | Repository abstracto + InMemoryRepository | #7 | Pendiente |
+| 3 | Repository abstracto + InMemoryRepository | #7 | Hecho |
 | 4 | Reglas de negocio (service de consultas) | #8 | Pendiente |
 | 5 | Caché cache-aside delante de la base | #8 | Pendiente |
 | 6 | Endpoints HTTP, `/health` y correlation ID | #9 | Pendiente |
@@ -78,6 +78,21 @@ Verificar con:
 uv run pytest tests/unit/test_schemas.py -v
 ```
 
+### 2026-09-29 — Paso 3: patrón Repository (issue #7)
+
+`app/core/repository.py` define el puerto abstracto: `Repository[T]` con las operaciones de
+lectura genéricas (`get_by_id`, `listar`, `contar`) y `PdfRepository`, que agrega
+`get_by_checksum`. Ninguna implementación queda con métodos vacíos.
+
+`app/core/in_memory_repository.py` es el adaptador en memoria que usan los tests. Es el
+doble de test del proyecto: no se parchean atributos privados ni se mockean internals.
+
+Verificar con:
+
+```bash
+uv run pytest tests/unit/test_in_memory_repository.py -v
+```
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
@@ -91,6 +106,12 @@ uv run pytest tests/unit/test_schemas.py -v
   Es preferible que falle al arrancar.
 - **`paginas` es opcional.** El contrato compartido lo muestra en el ejemplo de documento
   pero no lo lista entre los campos obligatorios, así que el modelo lo admite ausente.
+- **Listados ordenados por `created_at` descendente.** Una paginación sin orden definido
+  puede repetir o saltear documentos entre páginas. Ambos adaptadores respetan ese orden.
+- **Dos niveles de abstracción en el repositorio.** `Repository[T]` es el puerto genérico
+  que pide la metodología de la cátedra; `PdfRepository` agrega la única operación propia
+  del dominio. Con una sola entidad podría haber alcanzado una interfaz plana: se mantiene
+  la forma genérica porque es la prescrita, y el costo es una clase de cuatro líneas.
 
 ## Deuda técnica
 
