@@ -1,0 +1,46 @@
+services:
+  persistencia-consultas:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Nombres de servicio de esta misma red, no secretos: se definen acá para que un
+      # clon limpio levante sin configuración previa.
+      MONGO_URI: mongodb://mongodb:27017
+      MONGO_DATABASE: pdfs_db
+      MONGO_COLLECTION: pdfs
+      REDIS_URL: redis://redis:6379/0
+      REDIS_TTL_SECONDS: 300
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mongodb:
+    image: mongo:7.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo_data:
+  redis_data:
