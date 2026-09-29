@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from app.controllers import health_controller, pdf_controller
 from app.core.composition import obtener_settings
 from app.core.exceptions import DomainError
-from app.schemas.error import ErrorResponse
+from app.schemas.error import ErrorDetail, ErrorResponse
 
 CABECERA_CORRELATION_ID = "X-Correlation-ID"
 
@@ -44,3 +44,18 @@ async def propagar_correlation_id(request: Request, call_next):
 async def manejar_error_de_dominio(request: Request, error: DomainError) -> JSONResponse:
     cuerpo = ErrorResponse.desde_error(error, request.state.correlation_id)
     return JSONResponse(status_code=error.status_code, content=cuerpo.model_dump())
+
+
+@app.exception_handler(Exception)
+async def manejar_error_inesperado(request: Request, error: Exception) -> JSONResponse:
+    # El detalle del fallo no viaja al cliente: puede exponer la topologia interna.
+    # El correlation_id es lo que permite ubicarlo en los logs.
+    cuerpo = ErrorResponse(
+        error=ErrorDetail(
+            code="INTERNAL_ERROR",
+            message="Error interno del servicio",
+            details={},
+            correlation_id=request.state.correlation_id,
+        )
+    )
+    return JSONResponse(status_code=500, content=cuerpo.model_dump())
