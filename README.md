@@ -1,73 +1,304 @@
 # persistencia-consultas
 
-Microservicio de **consultas** (lectura) de documentos PDF, dentro de la arquitectura de
-microservicios `microservicios-pdf`. Forma parte del TP de Desarrollo de Software (UTN).
+Microservicio de **consultas** (solo lectura) de documentos PDF, dentro de la arquitectura
+`microservicios-pdf`. Trabajo práctico de Desarrollo de Software (UTN).
+
+Consulta documentos almacenados en MongoDB y usa Redis como caché con estrategia
+*cache-aside*.
 
 ## Responsabilidad
 
-- Consultar documentos (listar, por ID, por checksum).
-- Utilizar Redis como caché delante de MongoDB (patrón cache-aside).
+Hace:
 
-**No** hace (queda fuera de este servicio):
+- Listar documentos, paginado.
+- Buscar un documento por ID.
+- Buscar un documento por checksum.
+- Servir esas consultas desde Redis cuando la información ya está cacheada.
 
-- No modifica información (eso es responsabilidad de `persistencia-actualizaciones`).
-- No valida PDFs (`validacion-pdf`).
-- No extrae texto ni calcula checksum (`extraccion-texto`).
+No hace, a propósito:
 
-## Arquitectura
+- No crea, modifica ni borra documentos — eso es de `persistencia-actualizaciones`.
+- No valida archivos PDF — eso es de `validacion-pdf`.
+- No extrae texto ni calcula checksums — eso es de `extraccion-texto`.
+- No llama a ningún otro microservicio.
 
-```
-app/
-├── main.py           # ensamblado: routers, middleware, handler de excepciones
-├── controllers/       # CAPA 1 — HTTP: rutas, status codes, HTTPException
-├── schemas/            # CAPA 1 — DTOs Pydantic (contrato de la API)
-├── services/           # CAPA 2 — reglas de negocio
-├── models/              # CAPA 2 — entidades del dominio (Python puro)
-└── core/                 # CAPA 3 + transversal
-    ├── repository.py        # puerto abstracto (ABC)
-    ├── mongo_repository.py  # adaptador concreto (Mongo)
-    ├── cache_repository.py  # adaptador concreto (Redis)
-    ├── database.py          # conexión Mongo
-    ├── config.py            # settings
-    └── exceptions.py        # excepciones de dominio
-```
+## Endpoints
 
-Regla de dependencia: `controller → service → repository → BD`.
-
-## Endpoints (contrato `microservicios-pdf` v1.0.0)
+Contrato compartido `microservicios-pdf` v1.0.0.
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/pdf` | Lista documentos (paginado con `limit`/`offset`) |
-| GET | `/pdf/{id}` | Busca un documento por ID |
-| GET | `/pdf/checksum/{checksum}` | Busca un documento por checksum |
-| GET | `/health` | Healthcheck |
+| `GET` | `/pdf` | Lista documentos. Parámetros `limit` (1–100, por defecto 20) y `offset` (≥ 0). |
+| `GET` | `/pdf/{id}` | Busca un documento por ID. |
+| `GET` | `/pdf/checksum/{checksum}` | Busca un documento por checksum. |
+| `GET` | `/health` | Healthcheck. |
 
-## Variables de entorno
+Documentación interactiva, con el servicio levantado: <http://localhost:8000/docs>
 
-Ver [.env.example](.env.example). Copiar a `.env` para desarrollo local:
+### Respuesta de un documento
 
-```bash
-cp .env.example .env
+```json
+{
+  "id": "8f6f7c3e-12d5-4f57-9c6c-123456789abc",
+  "nombre": "contrato.pdf",
+  "checksum": "a7f5f35426b927411fc9231b56382173",
+  "texto": "Contenido extraído del PDF",
+  "tamano_bytes": 245760,
+  "paginas": 3,
+  "created_at": "2026-09-14T18:00:00Z",
+  "updated_at": "2026-09-14T18:00:00Z"
+}
 ```
 
-## Instalación y ejecución local
+### Respuesta del listado
+
+```json
+{ "items": [], "total": 0, "limit": 20, "offset": 0 }
+```
+
+### Respuesta de error
+
+Todos los errores usan el formato común del contrato:
+
+```json
+{
+  "error": {
+    "code": "RESOURCE_NOT_FOUND",
+    "message": "No existe un documento con id 123",
+    "details": {},
+    "correlation_id": "8f6f7c3e-12d5-4f57-9c6c-123456789abc"
+  }
+}
+```
+
+| Código | HTTP | Cuándo |
+|---|---|---|
+| `VALIDATION_ERROR` | 400 | `limit` fuera de 1–100 u `offset` negativo. |
+| `RESOURCE_NOT_FOUND` | 404 | No existe un documento con ese ID o checksum. |
+| `INTERNAL_ERROR` | 500 | Fallo inesperado, incluida una dependencia caída. |
+
+### Correlation ID
+
+El servicio propaga la cabecera `X-Correlation-ID`. Si la petición la trae, la reutiliza y
+la devuelve en la respuesta; si no, genera un UUID. El mismo identificador aparece en el
+cuerpo de los errores, para poder seguir una operación entre microservicios.
+
+## Levantar con Docker (recomendado)
+
+Levanta el servicio junto con MongoDB y Redis. Es la única forma de correrlo sin instalar
+nada más que Docker.
+
+```bash
+docker compose up --build -d
+```
+
+El servicio queda en <http://localhost:8000>. Para ver los logs y para detenerlo:
+
+```bash
+docker compose logs -f persistencia-consultas
+docker compose down            # conserva los datos
+docker compose down -v         # borra también los volúmenes
+```
+
+## Levantar sin Docker
+
+Requiere Python 3.12+, [uv](https://docs.astral.sh/uv/), y MongoDB y Redis accesibles.
 
 ```bash
 uv sync
+cp .env.example .env     # ajustar las URLs si hace falta
 uv run uvicorn app.main:app --reload
+```
+
+## Variables de entorno
+
+Todas son obligatorias: si falta alguna, el servicio no arranca. Ver `.env.example`.
+
+| Variable | Ejemplo | Para qué |
+|---|---|---|
+| `MONGO_URI` | `mongodb://localhost:27017` | Conexión a MongoDB. |
+| `MONGO_DATABASE` | `pdfs_db` | Base de datos a consultar. |
+| `MONGO_COLLECTION` | `pdfs` | Colección de documentos. |
+| `REDIS_URL` | `redis://localhost:6379/0` | Conexión a Redis. |
+| `REDIS_TTL_SECONDS` | `300` | Segundos que vive cada entrada de caché. |
+
+El archivo `.env` está en `.gitignore` y nunca se versiona. `docker-compose.yml` define
+estos valores directamente, porque apuntan a los servicios de su propia red y no son
+secretos.
+
+## Cómo comprobar que funciona
+
+Con el stack levantado (`docker compose up --build -d`):
+
+**1. El servicio responde**
+
+```bash
+curl -i http://localhost:8000/health
+```
+
+Debe devolver `200` con `{"status":"ok"}` y una cabecera `X-Correlation-ID`.
+
+**2. Cargar un documento de prueba**
+
+Este servicio no crea documentos: en el sistema completo los crea
+`persistencia-actualizaciones`. Para probarlo de forma aislada se inserta uno a mano:
+
+```bash
+docker compose exec mongodb mongosh pdfs_db --quiet --eval '
+db.pdfs.insertOne({
+  id: "8f6f7c3e-12d5-4f57-9c6c-123456789abc",
+  nombre: "contrato.pdf",
+  checksum: "a7f5f35426b927411fc9231b56382173",
+  texto: "Contenido extraido del PDF",
+  tamano_bytes: 245760,
+  paginas: 3,
+  created_at: new Date("2026-09-14T18:00:00Z"),
+  updated_at: new Date("2026-09-14T18:00:00Z")
+})'
+```
+
+**3. Las tres consultas del contrato**
+
+```bash
+curl http://localhost:8000/pdf
+curl http://localhost:8000/pdf/8f6f7c3e-12d5-4f57-9c6c-123456789abc
+curl http://localhost:8000/pdf/checksum/a7f5f35426b927411fc9231b56382173
+```
+
+Las tres deben devolver el documento recién insertado.
+
+> **Insertar antes de consultar.** Si se consulta `GET /pdf` con la base vacía, la caché
+> guarda ese listado vacío durante `REDIS_TTL_SECONDS` y las consultas siguientes lo van a
+> seguir devolviendo, aunque después se inserte un documento. No es una falla: es el
+> comportamiento esperado de una caché con TTL. En el sistema completo, quien invalida esas
+> claves al escribir es `persistencia-actualizaciones`, tal como fija su contrato. Para
+> forzar el refresco durante una prueba:
+> `docker compose exec redis redis-cli FLUSHALL`.
+
+**4. La caché está funcionando**
+
+Después de las consultas anteriores, las claves deben existir en Redis:
+
+```bash
+docker compose exec redis redis-cli KEYS "pdf:*"
+```
+
+Debe listar `pdf:id:...`, `pdf:checksum:...`, `pdf:list:20:0` y `pdf:total`. Esa es la
+prueba de que la respuesta se guardó: la primera consulta fue un MISS contra MongoDB y las
+siguientes se sirven desde Redis.
+
+**5. Los errores respetan el contrato**
+
+```bash
+curl -i http://localhost:8000/pdf/no-existe          # 404 RESOURCE_NOT_FOUND
+curl -i "http://localhost:8000/pdf?limit=0"          # 400 VALIDATION_ERROR
 ```
 
 ## Tests
 
 ```bash
-uv run pytest -v
+uv run pytest -v                              # toda la suite
+uv run pytest --cov=app --cov-report=term-missing
 ```
 
-## Docker
+La suite es **hermética**: corre sin `.env`, sin MongoDB y sin Redis levantados. La
+configuración se inyecta desde `tests/conftest.py` y el repositorio real se sustituye por
+`InMemoryPdfRepository` mediante `app.dependency_overrides`.
 
-_Pendiente (ver Fase 7 del plan de microservicios)._
+### Qué se testea y qué no
+
+Se testea:
+
+- Las reglas de negocio del service, contra el repositorio en memoria.
+- El puerto `PdfRepository`, con la misma suite corriendo contra sus dos implementaciones
+  hermeticas (en memoria y en memoria + caché), lo que demuestra que son intercambiables.
+- El cache-aside: HIT, MISS, aislamiento de claves y serialización de ida y vuelta.
+- Los endpoints HTTP completos, con códigos de estado, formato de errores y correlation ID.
+
+No se testea, a propósito: los adaptadores de MongoDB y Redis. Ver *Deuda técnica*.
+
+## Arquitectura
+
+Arquitectura de n-capas con patrón Repository.
+
+```
+app/
+├── main.py                      # ensamblado: routers, middleware, handlers de error
+├── controllers/                 # CAPA 1 — HTTP
+│   ├── pdf_controller.py
+│   └── health_controller.py
+├── schemas/                     # CAPA 1 — contrato público (Pydantic)
+│   ├── pdf.py
+│   └── error.py
+├── services/                    # CAPA 2 — reglas de negocio
+│   └── consulta_service.py
+├── models/                      # CAPA 2 — entidad de dominio (Python puro)
+│   └── pdf_document.py
+└── core/                        # CAPA 3 + transversal
+    ├── repository.py            # puerto abstracto
+    ├── in_memory_repository.py  # adaptador en memoria (tests)
+    ├── mongo_repository.py      # adaptador MongoDB
+    ├── cached_repository.py     # decorador cache-aside
+    ├── cache.py                 # puerto de caché
+    ├── in_memory_cache.py       # adaptador en memoria (tests)
+    ├── redis_cache.py           # adaptador Redis
+    ├── database.py              # creación de clientes
+    ├── composition.py           # inyección de dependencias
+    ├── config.py                # configuración
+    └── exceptions.py            # errores de dominio
+```
+
+Flujo: `controller → service → repository → base de datos`.
+
+- Los controllers no importan Motor, Redis ni repositorios concretos.
+- El service no importa FastAPI.
+- El modelo de dominio no usa Pydantic ni decoradores de persistencia.
+- Los schemas son independientes de la entidad de dominio.
+- Las implementaciones concretas se eligen en un único lugar: `app/core/composition.py`.
+
+### Caché cache-aside
+
+`CachedPdfRepository` envuelve a otro `PdfRepository`: busca en Redis, y ante un MISS
+consulta MongoDB y guarda el resultado con el TTL configurado.
+
+Claves: `pdf:id:{id}`, `pdf:checksum:{checksum}`, `pdf:list:{limit}:{offset}`, `pdf:total`.
+
+Como decorador, la caché se puede quitar del cableado sin tocar el service ni el adaptador
+de MongoDB.
+
+## Decisiones técnicas
+
+- **Sin prefijo de API.** El contrato define las rutas en `/pdf`; agregar `/api/v1`
+  rompería la compatibilidad con el orquestador.
+- **`Settings` sin valores por defecto.** Un default para `MONGO_URI` haría que un error de
+  configuración pase desapercibido y el servicio apunte a otra base en silencio.
+- **`limit` tope 100.** El contrato no fija un máximo. Sin tope, un cliente puede forzar al
+  servicio a materializar la colección entera en una sola llamada.
+- **La validación de paginación vive en el service.** Es una regla de dominio, no un
+  detalle del transporte, y así queda cubierta por tests que no necesitan HTTP.
+- **Los documentos inexistentes no se cachean.** Guardar un "no existe" haría invisible
+  durante todo el TTL a un documento creado justo después de la consulta.
+- **Listados ordenados por `created_at` descendente.** Una paginación sin orden definido
+  puede repetir o saltear documentos entre páginas.
+- **El mensaje de los errores 500 es genérico.** El detalle interno puede revelar la
+  topología del sistema; la trazabilidad se resuelve con el `correlation_id`.
+
+El registro completo del desarrollo, paso por paso, está en [BITACORA.md](BITACORA.md).
 
 ## Deuda técnica
 
-_Se documentará acá cualquier decisión de alcance no implementada, con su motivo._
+- **Los adaptadores de MongoDB y Redis no tienen tests automatizados.**
+  `MongoPdfRepository` y `RedisCache` son envoltorios delgados sobre Motor y
+  `redis.asyncio`: cada método es una llamada directa al driver. Cubrirlos exigiría
+  levantar contenedores reales, lo que rompería la regla de que la suite corra sin red ni
+  bases de datos. Lo único con lógica propia —la traducción de un documento de MongoDB a
+  la entidad de dominio— sí está cubierto en `tests/unit/test_mongo_repository.py`. Se
+  cubrirían con tests de integración contra contenedores efímeros.
+- **Si Redis no está disponible, la consulta falla con `INTERNAL_ERROR`.** La alternativa
+  —degradar y responder igual desde MongoDB, ignorando la caché— es mejor comportamiento
+  para un servicio de lectura, pero no está implementada.
+- **La caché no simula vencimiento en los tests.** `InMemoryCache` guarda sin expirar: el
+  TTL es responsabilidad de Redis.
+- **La colección de MongoDB no se crea con índices desde este servicio.** Las consultas por
+  `id` y `checksum` conviene que estén indexadas; crear los índices corresponde a
+  `persistencia-actualizaciones`, que es el dueño de la escritura.
