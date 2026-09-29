@@ -29,7 +29,7 @@ la implementación mínima que lo hace pasar (commit `feat:`).
 | 1 | Configuración con Pydantic Settings | #4 | Hecho |
 | 2 | Modelos de dominio y schemas Pydantic | #6 | Hecho |
 | 3 | Repository abstracto + InMemoryRepository | #7 | Hecho |
-| 4 | Reglas de negocio (service de consultas) | #8 | Pendiente |
+| 4 | Reglas de negocio (service de consultas) | #8 | Hecho |
 | 5 | Caché cache-aside delante de la base | #8 | Pendiente |
 | 6 | Endpoints HTTP, `/health` y correlation ID | #9 | Pendiente |
 | 7 | Adaptadores reales: MongoDB y Redis | #7 | Pendiente |
@@ -93,6 +93,21 @@ Verificar con:
 uv run pytest tests/unit/test_in_memory_repository.py -v
 ```
 
+### 2026-09-29 — Paso 4: reglas de negocio (issue #8)
+
+`app/services/consulta_service.py` implementa `ConsultaPdfService`, que recibe un
+`PdfRepository` por constructor. No importa FastAPI: recibe y devuelve tipos del dominio,
+así que se puede testear sin levantar un servidor HTTP.
+
+`app/core/exceptions.py` define los errores de dominio con el `code` y el `status_code`
+del contrato común: `RESOURCE_NOT_FOUND` (404) y `VALIDATION_ERROR` (400).
+
+Verificar con:
+
+```bash
+uv run pytest tests/unit/test_consulta_service.py -v
+```
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
@@ -108,6 +123,17 @@ uv run pytest tests/unit/test_in_memory_repository.py -v
   pero no lo lista entre los campos obligatorios, así que el modelo lo admite ausente.
 - **Listados ordenados por `created_at` descendente.** Una paginación sin orden definido
   puede repetir o saltear documentos entre páginas. Ambos adaptadores respetan ese orden.
+- **`limit` tope 100.** El contrato no fija un máximo. Sin tope, un cliente puede pedir el
+  listado completo en una sola llamada y forzar al servicio a materializar toda la
+  colección. Se rechaza con `VALIDATION_ERROR` en lugar de recortar en silencio, para que
+  el cliente sepa que su pedido no se respetó tal cual.
+- **La validación de paginación vive en el service, no en el controller.** Es una regla de
+  dominio y así queda cubierta por tests que no necesitan HTTP. El controller solo
+  transporta los valores.
+- **Sin `BaseService` intermedio.** La metodología lo muestra como ejemplo, pero con un
+  solo service una clase base sería una capa vacía. Lo que sí se respeta es lo que esa
+  clase base ilustra: el repositorio entra por constructor, tipado contra la abstracción
+  y sin valor por defecto.
 - **Dos niveles de abstracción en el repositorio.** `Repository[T]` es el puerto genérico
   que pide la metodología de la cátedra; `PdfRepository` agrega la única operación propia
   del dominio. Con una sola entidad podría haber alcanzado una interfaz plana: se mantiene
