@@ -3,7 +3,9 @@ from fastapi.testclient import TestClient
 
 from app.core.composition import obtener_servicio
 from app.core.in_memory_repository import InMemoryPdfRepository
+from app.core.repository import PdfRepository
 from app.main import app
+from app.models.pdf_document import PdfDocument
 from app.services.consulta_service import ConsultaPdfService
 
 ID_EXISTENTE = "8f6f7c3e-12d5-4f57-9c6c-123456789abc"
@@ -108,3 +110,31 @@ def test_el_correlation_id_recibido_aparece_en_el_cuerpo_del_error(cliente):
     respuesta = cliente.get("/pdf/id-inexistente", headers={"X-Correlation-ID": enviado})
 
     assert respuesta.json()["error"]["correlation_id"] == enviado
+
+
+class RepositorioCaido(PdfRepository):
+    """Simula una dependencia de infraestructura que deja de responder."""
+
+    async def get_by_id(self, documento_id: str) -> PdfDocument | None:
+        raise RuntimeError("la base de datos no responde")
+
+    async def get_by_checksum(self, checksum: str) -> PdfDocument | None:
+        raise RuntimeError("la base de datos no responde")
+
+    async def listar(self, limit: int, offset: int) -> list[PdfDocument]:
+        raise RuntimeError("la base de datos no responde")
+
+    async def contar(self) -> int:
+        raise RuntimeError("la base de datos no responde")
+
+
+def test_un_fallo_de_infraestructura_devuelve_el_error_comun():
+    app.dependency_overrides[obtener_servicio] = lambda: ConsultaPdfService(RepositorioCaido())
+    with TestClient(app, raise_server_exceptions=False) as cliente_de_prueba:
+        respuesta = cliente_de_prueba.get(f"/pdf/{ID_EXISTENTE}")
+    app.dependency_overrides.clear()
+
+    assert respuesta.status_code == 500
+    cuerpo = respuesta.json()
+    assert cuerpo["error"]["code"] == "INTERNAL_ERROR"
+    assert cuerpo["error"]["correlation_id"]
