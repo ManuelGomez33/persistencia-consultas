@@ -18,6 +18,7 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.16.8",
 ]
 
@@ -27,6 +28,12 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# UP046 propone la sintaxis de genéricos de PEP 695 (`class Repository[T]`). Se mantiene
+# `Generic[T]` porque es la forma del patrón Repository que fija la metodología del
+# proyecto en CLAUDE.md, y ambas expresan exactamente lo mismo.
+ignore = ["UP046"]
 
 [tool.black]
 line-length = 100

@@ -1,8 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.mongo_repository import documento_desde_mongo
 
-CREADO = datetime(2026, 9, 14, 18, 0, tzinfo=timezone.utc)
+CREADO = datetime(2026, 9, 14, 18, 0, tzinfo=UTC)
 
 
 def datos_de_mongo(**campos) -> dict:
@@ -47,7 +47,9 @@ def test_admite_un_documento_sin_paginas():
 
 
 def test_normaliza_fechas_sin_zona_horaria_a_utc():
-    naive = datetime(2026, 9, 14, 18, 0)
+    # La fecha sin zona horaria es justamente lo que se está probando: es como las
+    # devuelve un cliente de Mongo sin tz_aware.
+    naive = datetime(2026, 9, 14, 18, 0)  # noqa: DTZ001
 
     documento = documento_desde_mongo(datos_de_mongo(created_at=naive, updated_at=naive))
 

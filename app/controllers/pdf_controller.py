@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 
 from app.core.composition import obtener_servicio
@@ -6,12 +8,14 @@ from app.services.consulta_service import ConsultaPdfService
 
 router = APIRouter(prefix="/pdf", tags=["pdf"])
 
+ServicioDeConsultas = Annotated[ConsultaPdfService, Depends(obtener_servicio)]
+
 
 @router.get("")
 async def listar(
+    servicio: ServicioDeConsultas,
     limit: int = 20,
     offset: int = 0,
-    servicio: ConsultaPdfService = Depends(obtener_servicio),
 ) -> PdfListResponse:
     documentos, total = await servicio.listar(limit=limit, offset=offset)
     return PdfListResponse(
@@ -25,7 +29,7 @@ async def listar(
 @router.get("/checksum/{checksum}")
 async def buscar_por_checksum(
     checksum: str,
-    servicio: ConsultaPdfService = Depends(obtener_servicio),
+    servicio: ServicioDeConsultas,
 ) -> PdfDocumentResponse:
     return PdfDocumentResponse.from_domain(await servicio.obtener_por_checksum(checksum))
 
@@ -33,6 +37,6 @@ async def buscar_por_checksum(
 @router.get("/{documento_id}")
 async def buscar_por_id(
     documento_id: str,
-    servicio: ConsultaPdfService = Depends(obtener_servicio),
+    servicio: ServicioDeConsultas,
 ) -> PdfDocumentResponse:
     return PdfDocumentResponse.from_domain(await servicio.obtener_por_id(documento_id))

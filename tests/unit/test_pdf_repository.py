@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -28,17 +28,17 @@ def tres_documentos(documento):
     primero = documento(
         id="11111111-1111-1111-1111-111111111111",
         checksum="checksum-1",
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     segundo = documento(
         id="22222222-2222-2222-2222-222222222222",
         checksum="checksum-2",
-        created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 2, 1, tzinfo=UTC),
     )
     tercero = documento(
         id="33333333-3333-3333-3333-333333333333",
         checksum="checksum-3",
-        created_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 3, 1, tzinfo=UTC),
     )
     return primero, segundo, tercero
 
