@@ -1,0 +1,83 @@
+from datetime import datetime, timezone
+
+import pytest
+
+from app.core.in_memory_repository import InMemoryPdfRepository
+
+
+@pytest.fixture
+def tres_documentos(documento):
+    primero = documento(
+        id="11111111-1111-1111-1111-111111111111",
+        checksum="checksum-1",
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    segundo = documento(
+        id="22222222-2222-2222-2222-222222222222",
+        checksum="checksum-2",
+        created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+    )
+    tercero = documento(
+        id="33333333-3333-3333-3333-333333333333",
+        checksum="checksum-3",
+        created_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+    )
+    return primero, segundo, tercero
+
+
+async def test_get_by_id_devuelve_el_documento(documento):
+    esperado = documento()
+    repositorio = InMemoryPdfRepository([esperado])
+
+    assert await repositorio.get_by_id(esperado.id) == esperado
+
+
+async def test_get_by_id_devuelve_none_cuando_no_existe(documento):
+    repositorio = InMemoryPdfRepository([documento()])
+
+    assert await repositorio.get_by_id("id-inexistente") is None
+
+
+async def test_get_by_checksum_devuelve_el_documento(documento):
+    esperado = documento()
+    repositorio = InMemoryPdfRepository([esperado])
+
+    assert await repositorio.get_by_checksum(esperado.checksum) == esperado
+
+
+async def test_get_by_checksum_devuelve_none_cuando_no_existe(documento):
+    repositorio = InMemoryPdfRepository([documento()])
+
+    assert await repositorio.get_by_checksum("checksum-inexistente") is None
+
+
+async def test_listar_devuelve_los_mas_recientes_primero(tres_documentos):
+    primero, segundo, tercero = tres_documentos
+    repositorio = InMemoryPdfRepository([primero, segundo, tercero])
+
+    assert await repositorio.listar(limit=20, offset=0) == [tercero, segundo, primero]
+
+
+async def test_listar_respeta_limit_y_offset(tres_documentos):
+    primero, segundo, tercero = tres_documentos
+    repositorio = InMemoryPdfRepository([primero, segundo, tercero])
+
+    assert await repositorio.listar(limit=1, offset=1) == [segundo]
+
+
+async def test_listar_devuelve_vacio_cuando_el_offset_supera_el_total(tres_documentos):
+    repositorio = InMemoryPdfRepository(list(tres_documentos))
+
+    assert await repositorio.listar(limit=20, offset=99) == []
+
+
+async def test_contar_devuelve_la_cantidad_total(tres_documentos):
+    repositorio = InMemoryPdfRepository(list(tres_documentos))
+
+    assert await repositorio.contar() == 3
+
+
+async def test_contar_devuelve_cero_en_un_repositorio_vacio():
+    repositorio = InMemoryPdfRepository([])
+
+    assert await repositorio.contar() == 0
