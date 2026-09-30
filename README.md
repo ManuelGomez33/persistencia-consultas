@@ -1,7 +1,7 @@
 # persistencia-consultas
 
 Microservicio de **consultas** (solo lectura) de documentos PDF, dentro de la arquitectura
-`microservicios-pdf`. Trabajo práctico de Desarrollo de Software (UTN).
+`microservicios-pdf`. Trabajo de Desarrollo de Software (UTN).
 
 Consulta documentos almacenados en MongoDB y usa Redis como caché con estrategia
 *cache-aside*.
