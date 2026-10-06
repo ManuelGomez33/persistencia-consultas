@@ -1,3 +1,5 @@
+import logging
+import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -11,9 +13,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.controllers import health_controller, pdf_controller
 from app.core.composition import obtener_settings
 from app.core.exceptions import DomainError
+from app.core.logs import configurar_logs, correlation_id_actual
 from app.schemas.error import ErrorDetail, ErrorResponse
 
 CABECERA_CORRELATION_ID = "X-Correlation-ID"
+
+configurar_logs()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -39,17 +45,44 @@ app.include_router(pdf_controller.router)
 async def propagar_correlation_id(request: Request, call_next):
     correlation_id = request.headers.get(CABECERA_CORRELATION_ID) or str(uuid4())
     request.state.correlation_id = correlation_id
-    respuesta = await call_next(request)
-    respuesta.headers[CABECERA_CORRELATION_ID] = correlation_id
-    return respuesta
+    token = correlation_id_actual.set(correlation_id)
+    inicio = time.perf_counter()
+    try:
+        respuesta = await call_next(request)
+        respuesta.headers[CABECERA_CORRELATION_ID] = correlation_id
+        logger.info(
+            "method=%s path=%s status=%s duracion_ms=%.1f",
+            request.method,
+            request.url.path,
+            respuesta.status_code,
+            (time.perf_counter() - inicio) * 1000,
+        )
+        return respuesta
+    finally:
+        correlation_id_actual.reset(token)
 
 
 def responder_error(
-    request: Request, status_code: int, code: str, message: str, details: dict
+    request: Request,
+    status_code: int,
+    code: str,
+    message: str,
+    details: dict,
+    exc_info: BaseException | None = None,
 ) -> JSONResponse:
-    """Formato común de errores del contrato. La cabecera se agrega acá porque el handler
-    de Exception corre fuera del middleware de correlation ID."""
+    """Formato común de errores del contrato. La cabecera y el contexto del log se fijan
+    acá porque el handler de Exception corre fuera del middleware de correlation ID."""
     correlation_id = request.state.correlation_id
+    token = correlation_id_actual.set(correlation_id)
+    logger.log(
+        logging.ERROR if status_code >= 500 else logging.WARNING,
+        "code=%s status=%s message=%s",
+        code,
+        status_code,
+        message,
+        exc_info=exc_info,
+    )
+    correlation_id_actual.reset(token)
     cuerpo = ErrorResponse(
         error=ErrorDetail(
             code=code, message=message, details=details, correlation_id=correlation_id
@@ -93,4 +126,6 @@ async def manejar_request_invalido(request: Request, error: RequestValidationErr
 async def manejar_error_inesperado(request: Request, error: Exception) -> JSONResponse:
     # El detalle del fallo no viaja al cliente: puede exponer la topologia interna.
     # El correlation_id es lo que permite ubicarlo en los logs.
-    return responder_error(request, 500, "INTERNAL_ERROR", "Error interno del servicio", {})
+    return responder_error(
+        request, 500, "INTERNAL_ERROR", "Error interno del servicio", {}, exc_info=error
+    )
