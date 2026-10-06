@@ -1,7 +1,11 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from motor.motor_asyncio import AsyncIOMotorCollection
+from pymongo.errors import PyMongoError
 
+from app.core.exceptions import BaseDeDatosNoDisponible
 from app.core.repository import PdfRepository
 from app.models.pdf_document import PdfDocument
 
@@ -17,15 +21,27 @@ class MongoPdfRepository(PdfRepository):
         return await self._buscar_uno({"checksum": checksum})
 
     async def listar(self, limit: int, offset: int) -> list[PdfDocument]:
-        cursor = self._coleccion.find().sort("created_at", -1).skip(offset).limit(limit)
-        return [documento_desde_mongo(datos) async for datos in cursor]
+        with _base_no_disponible_si_falla():
+            cursor = self._coleccion.find().sort("created_at", -1).skip(offset).limit(limit)
+            return [documento_desde_mongo(datos) async for datos in cursor]
 
     async def contar(self) -> int:
-        return await self._coleccion.count_documents({})
+        with _base_no_disponible_si_falla():
+            return await self._coleccion.count_documents({})
 
     async def _buscar_uno(self, filtro: dict) -> PdfDocument | None:
-        datos = await self._coleccion.find_one(filtro)
+        with _base_no_disponible_si_falla():
+            datos = await self._coleccion.find_one(filtro)
         return documento_desde_mongo(datos) if datos else None
+
+
+@contextmanager
+def _base_no_disponible_si_falla() -> Iterator[None]:
+    """Traduce cualquier error del driver al error del contrato (DATABASE_ERROR 503)."""
+    try:
+        yield
+    except PyMongoError as error:
+        raise BaseDeDatosNoDisponible("MongoDB no está disponible") from error
 
 
 def documento_desde_mongo(datos: dict) -> PdfDocument:

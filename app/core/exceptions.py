@@ -18,3 +18,8 @@ class RecursoNoEncontrado(DomainError):
 class ParametrosInvalidos(DomainError):
     code = "VALIDATION_ERROR"
     status_code = 400
+
+
+class BaseDeDatosNoDisponible(DomainError):
+    code = "DATABASE_ERROR"
+    status_code = 503
