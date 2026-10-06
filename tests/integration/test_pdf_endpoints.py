@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -186,3 +188,36 @@ def test_la_base_caida_devuelve_database_error():
 
     assert respuesta.status_code == 503
     assert respuesta.json()["error"]["code"] == "DATABASE_ERROR"
+
+
+def registros_con(caplog, correlation_id: str) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if getattr(r, "correlation_id", None) == correlation_id]
+
+
+def test_cada_request_se_registra_con_su_correlation_id(cliente, caplog):
+    caplog.set_level(logging.INFO)
+
+    cliente.get("/pdf", headers={"X-Correlation-ID": "log-123"})
+
+    mensajes = [r.getMessage() for r in registros_con(caplog, "log-123")]
+    assert any("method=GET path=/pdf status=200" in m for m in mensajes)
+
+
+def test_cada_error_se_registra_con_su_codigo(cliente, caplog):
+    caplog.set_level(logging.INFO)
+
+    cliente.get("/pdf/id-inexistente", headers={"X-Correlation-ID": "log-error"})
+
+    mensajes = [r.getMessage() for r in registros_con(caplog, "log-error")]
+    assert any("code=RESOURCE_NOT_FOUND status=404" in m for m in mensajes)
+
+
+def test_un_fallo_inesperado_se_registra_con_la_traza(caplog):
+    caplog.set_level(logging.INFO)
+    app.dependency_overrides[obtener_servicio] = lambda: ConsultaPdfService(RepositorioCaido())
+    with TestClient(app, raise_server_exceptions=False) as cliente_de_prueba:
+        cliente_de_prueba.get(f"/pdf/{ID_EXISTENTE}", headers={"X-Correlation-ID": "log-500"})
+    app.dependency_overrides.clear()
+
+    errores = [r for r in registros_con(caplog, "log-500") if r.levelno == logging.ERROR]
+    assert errores and errores[0].exc_info is not None
