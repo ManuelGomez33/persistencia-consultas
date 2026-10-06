@@ -1,17 +1,22 @@
 import hashlib
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import datetime
 
 from app.core.cache import Cache
+from app.core.exceptions import CacheNoDisponible
 from app.core.repository import PdfRepository
 from app.models.pdf_document import PdfDocument
+
+logger = logging.getLogger(__name__)
 
 
 class CachedPdfRepository(PdfRepository):
     """Aplica cache-aside sobre otro repositorio: consulta la caché y, ante un MISS,
-    delega en el repositorio y guarda el resultado."""
+    delega en el repositorio y guarda el resultado. Si la caché no responde, se sigue
+    con el repositorio: la caché acelera las consultas pero no es imprescindible."""
 
     def __init__(self, repository: PdfRepository, cache: Cache, ttl_seconds: int) -> None:
         self._repository = repository
@@ -33,7 +38,7 @@ class CachedPdfRepository(PdfRepository):
     async def listar(self, limit: int, offset: int) -> list[PdfDocument]:
         parametros = f"limit={limit}&offset={offset}"
         clave = f"pdf:list:{hashlib.sha256(parametros.encode()).hexdigest()}"
-        cacheado = await self._cache.get(clave)
+        cacheado = await self._leer(clave)
         if cacheado is not None:
             return [_desde_dict(datos) for datos in json.loads(cacheado)]
 
@@ -51,7 +56,7 @@ class CachedPdfRepository(PdfRepository):
         clave: str,
         consultar: Callable[[], Awaitable[PdfDocument | None]],
     ) -> PdfDocument | None:
-        cacheado = await self._cache.get(clave)
+        cacheado = await self._leer(clave)
         if cacheado is not None:
             return _desde_dict(json.loads(cacheado))
 
@@ -62,8 +67,18 @@ class CachedPdfRepository(PdfRepository):
             await self._guardar(clave, _a_dict(documento))
         return documento
 
+    async def _leer(self, clave: str) -> str | None:
+        try:
+            return await self._cache.get(clave)
+        except CacheNoDisponible:
+            logger.warning("cache no disponible al leer %s; se consulta el repositorio", clave)
+            return None
+
     async def _guardar(self, clave: str, valor: object) -> None:
-        await self._cache.set(clave, json.dumps(valor), self._ttl_seconds)
+        try:
+            await self._cache.set(clave, json.dumps(valor), self._ttl_seconds)
+        except CacheNoDisponible:
+            logger.warning("cache no disponible al guardar %s", clave)
 
 
 def _a_dict(documento: PdfDocument) -> dict:
