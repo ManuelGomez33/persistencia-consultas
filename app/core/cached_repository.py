@@ -1,3 +1,4 @@
+import hashlib
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
@@ -30,7 +31,8 @@ class CachedPdfRepository(PdfRepository):
         )
 
     async def listar(self, limit: int, offset: int) -> list[PdfDocument]:
-        clave = f"pdf:list:{limit}:{offset}"
+        parametros = f"limit={limit}&offset={offset}"
+        clave = f"pdf:list:{hashlib.sha256(parametros.encode()).hexdigest()}"
         cacheado = await self._cache.get(clave)
         if cacheado is not None:
             return [_desde_dict(datos) for datos in json.loads(cacheado)]
@@ -40,13 +42,9 @@ class CachedPdfRepository(PdfRepository):
         return documentos
 
     async def contar(self) -> int:
-        cacheado = await self._cache.get("pdf:total")
-        if cacheado is not None:
-            return json.loads(cacheado)
-
-        total = await self._repository.contar()
-        await self._guardar("pdf:total", total)
-        return total
+        # El total no se cachea: no hay clave del contrato para él, así que
+        # persistencia-actualizaciones no lo invalidaría al escribir.
+        return await self._repository.contar()
 
     async def _documento_cacheado(
         self,
