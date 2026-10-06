@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.controllers import health_controller, pdf_controller
@@ -44,6 +46,19 @@ async def propagar_correlation_id(request: Request, call_next):
 async def manejar_error_de_dominio(request: Request, error: DomainError) -> JSONResponse:
     cuerpo = ErrorResponse.desde_error(error, request.state.correlation_id)
     return JSONResponse(status_code=error.status_code, content=cuerpo.model_dump())
+
+
+@app.exception_handler(RequestValidationError)
+async def manejar_request_invalido(request: Request, error: RequestValidationError) -> JSONResponse:
+    cuerpo = ErrorResponse(
+        error=ErrorDetail(
+            code="VALIDATION_ERROR",
+            message="Los parámetros de la consulta no son válidos",
+            details={"errors": jsonable_encoder(error.errors())},
+            correlation_id=request.state.correlation_id,
+        )
+    )
+    return JSONResponse(status_code=400, content=cuerpo.model_dump())
 
 
 @app.exception_handler(Exception)
