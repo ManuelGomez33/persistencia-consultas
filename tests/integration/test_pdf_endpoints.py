@@ -156,3 +156,15 @@ def test_un_fallo_de_infraestructura_devuelve_el_error_comun():
     cuerpo = respuesta.json()
     assert cuerpo["error"]["code"] == "INTERNAL_ERROR"
     assert cuerpo["error"]["correlation_id"]
+
+
+def test_un_fallo_inesperado_devuelve_el_correlation_id_en_la_cabecera():
+    app.dependency_overrides[obtener_servicio] = lambda: ConsultaPdfService(RepositorioCaido())
+    with TestClient(app, raise_server_exceptions=False) as cliente_de_prueba:
+        respuesta = cliente_de_prueba.get(
+            f"/pdf/{ID_EXISTENTE}", headers={"X-Correlation-ID": "fallo-500"}
+        )
+    app.dependency_overrides.clear()
+
+    assert respuesta.headers["X-Correlation-ID"] == "fallo-500"
+    assert respuesta.json()["error"]["correlation_id"] == "fallo-500"
