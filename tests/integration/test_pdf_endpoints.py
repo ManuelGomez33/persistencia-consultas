@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.composition import obtener_servicio
+from app.core.exceptions import BaseDeDatosNoDisponible
 from app.core.in_memory_repository import InMemoryPdfRepository
 from app.core.repository import PdfRepository
 from app.main import app
@@ -168,3 +169,20 @@ def test_un_fallo_inesperado_devuelve_el_correlation_id_en_la_cabecera():
 
     assert respuesta.headers["X-Correlation-ID"] == "fallo-500"
     assert respuesta.json()["error"]["correlation_id"] == "fallo-500"
+
+
+class RepositorioSinBase(RepositorioCaido):
+    """Simula el adaptador de Mongo cuando la base no responde."""
+
+    async def get_by_id(self, documento_id: str) -> PdfDocument | None:
+        raise BaseDeDatosNoDisponible("MongoDB no está disponible")
+
+
+def test_la_base_caida_devuelve_database_error():
+    app.dependency_overrides[obtener_servicio] = lambda: ConsultaPdfService(RepositorioSinBase())
+    with TestClient(app, raise_server_exceptions=False) as cliente_de_prueba:
+        respuesta = cliente_de_prueba.get(f"/pdf/{ID_EXISTENTE}")
+    app.dependency_overrides.clear()
+
+    assert respuesta.status_code == 503
+    assert respuesta.json()["error"]["code"] == "DATABASE_ERROR"
