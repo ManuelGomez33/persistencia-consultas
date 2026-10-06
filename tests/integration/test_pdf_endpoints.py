@@ -95,6 +95,13 @@ def test_buscar_por_checksum_inexistente_devuelve_404(cliente):
     assert respuesta.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
 
 
+def test_una_ruta_inexistente_devuelve_el_error_comun(cliente):
+    respuesta = cliente.get("/no-existe")
+
+    assert respuesta.status_code == 404
+    assert respuesta.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
 def test_el_error_respeta_el_contrato_comun(cliente):
     cuerpo = cliente.get("/pdf/id-inexistente").json()
 
