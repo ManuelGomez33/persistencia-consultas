@@ -242,6 +242,29 @@ Se ejecutaron los pasos del README en orden, y todos pasaron:
 
 El microservicio está terminado según el alcance del contrato `microservicios-pdf` v1.0.0.
 
+### 2026-10-06 — Arreglos de la auditoría de integración
+
+Se auditó el servicio contra el contrato `microservicios-pdf` v1.0.0 antes de integrarlo
+(informe en la carpeta `auditorias/` del proyecto, fuera de este repo). Los arreglos se
+hicieron en la rama `fix/auditoria-consultas`, con un commit rojo antes de cada cambio de
+comportamiento:
+
+1. `GET /pdf?limit=abc` respondía 422 con `{"detail": ...}`: ahora 400 `VALIDATION_ERROR`
+   con el formato común. Una ruta inexistente responde 404 `RESOURCE_NOT_FOUND`.
+2. El 500 no traía la cabecera `X-Correlation-ID`; ahora sí. Los cuatro handlers de error
+   comparten `responder_error`.
+3. MongoDB caído respondía `INTERNAL_ERROR` 500: ahora `DATABASE_ERROR` 503, como fija el
+   contrato. El adaptador traduce `PyMongoError`.
+4. Claves de caché: el listado pasa a `pdf:list:{hash}` y el total deja de cachearse.
+   `pdf:total` no es una clave del contrato y `persistencia-actualizaciones` no la
+   invalidaría: el total quedaba viejo después de cada escritura.
+5. Logs a stdout con el `correlation_id` en cada línea (12-Factor XI).
+6. Redis caído ya no deja sin servicio: se registra un `WARNING` y la consulta sigue
+   contra MongoDB (política acordada con el grupo). Era deuda declarada.
+7. Las conexiones a MongoDB y Redis se cierran al apagar (12-Factor IX).
+8. El compose ya no publica 27017 ni 6379 (chocaban con Traefik) y la imagen desactiva el
+   access log de uvicorn.
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
@@ -268,9 +291,10 @@ El microservicio está terminado según el alcance del contrato `microservicios-
 - **Los documentos inexistentes no se cachean.** Guardar un "no existe" haría invisible
   durante todo el TTL a un documento creado por `persistencia-actualizaciones` justo
   después de la consulta.
-- **Claves de listado por `limit` y `offset` explícitos.** El contrato sugiere
-  `pdf:list:{hash-de-parametros}`; con solo dos parámetros, escribirlos en la clave es
-  equivalente y deja la caché legible al inspeccionar Redis.
+- **Claves de caché exactamente las del contrato.** El listado usa
+  `pdf:list:{hash-de-parametros}` y el total no se cachea. Al principio el listado usaba
+  `pdf:list:{limit}:{offset}` y el total `pdf:total`; se cambió en la auditoría porque una
+  clave fuera del contrato no la invalida `persistencia-actualizaciones` al escribir.
 - **`limit` tope 100.** El contrato no fija un máximo. Sin tope, un cliente puede pedir el
   listado completo en una sola llamada y forzar al servicio a materializar toda la
   colección. Se rechaza con `VALIDATION_ERROR` en lugar de recortar en silencio, para que
