@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.controllers import health_controller, pdf_controller
-from app.core.composition import obtener_settings
+from app.core.composition import cerrar_conexiones, obtener_settings
 from app.core.exceptions import DomainError
 from app.core.logs import configurar_logs, correlation_id_actual
 from app.schemas.error import ErrorDetail, ErrorResponse
@@ -28,6 +28,7 @@ async def lifespan(_: FastAPI):
     # y no en la primera consulta.
     obtener_settings()
     yield
+    await cerrar_conexiones()
 
 
 app = FastAPI(
