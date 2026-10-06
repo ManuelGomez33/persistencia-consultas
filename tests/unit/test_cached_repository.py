@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 from app.core.cached_repository import CachedPdfRepository
@@ -73,7 +75,23 @@ async def test_listados_con_distinta_paginacion_no_comparten_cache(documento, ca
     assert await con_documentos([], cache).listar(limit=20, offset=1) == []
 
 
-async def test_el_total_se_sirve_desde_cache(documento, cache):
+def clave_de_listado(limit: int, offset: int) -> str:
+    """Clave del contrato: pdf:list:{hash-de-parametros}."""
+    parametros = f"limit={limit}&offset={offset}"
+    return f"pdf:list:{hashlib.sha256(parametros.encode()).hexdigest()}"
+
+
+async def test_el_listado_usa_la_clave_del_contrato(documento, cache):
+    await con_documentos([documento()], cache).listar(limit=20, offset=0)
+
+    assert await cache.get(clave_de_listado(20, 0)) is not None
+    assert await cache.get("pdf:list:20:0") is None
+
+
+async def test_el_total_no_se_cachea(documento, cache):
+    # pdf:total no es una clave del contrato: persistencia-actualizaciones no la
+    # invalidaría al escribir y el total quedaría viejo hasta que venza el TTL.
     await con_documentos([documento()], cache).contar()
 
-    assert await con_documentos([], cache).contar() == 1
+    assert await con_documentos([], cache).contar() == 0
+    assert await cache.get("pdf:total") is None
