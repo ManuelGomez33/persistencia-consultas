@@ -92,4 +92,9 @@ async def manejar_error_inesperado(request: Request, error: Exception) -> JSONRe
             correlation_id=request.state.correlation_id,
         )
     )
-    return JSONResponse(status_code=500, content=cuerpo.model_dump())
+    # Este handler corre fuera del middleware: la cabecera se agrega acá.
+    return JSONResponse(
+        status_code=500,
+        content=cuerpo.model_dump(),
+        headers={CABECERA_CORRELATION_ID: request.state.correlation_id},
+    )
