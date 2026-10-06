@@ -36,4 +36,5 @@ line-length = 100
 ignore = ["UP046"]
 
 [tool.black]
+target-version = ["py312"]
 line-length = 100
