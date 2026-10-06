@@ -53,6 +53,17 @@ def test_listar_rechaza_parametros_invalidos(cliente):
     assert respuesta.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+def test_listar_rechaza_parametros_que_no_son_numeros(cliente):
+    respuesta = cliente.get(
+        "/pdf", params={"limit": "abc"}, headers={"X-Correlation-ID": "parametros-invalidos"}
+    )
+
+    assert respuesta.status_code == 400
+    error = respuesta.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert error["correlation_id"] == "parametros-invalidos"
+
+
 def test_buscar_por_id_devuelve_el_documento(cliente):
     respuesta = cliente.get(f"/pdf/{ID_EXISTENTE}")
 
