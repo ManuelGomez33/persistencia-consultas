@@ -1,6 +1,10 @@
 from datetime import UTC, datetime
 
-from app.core.mongo_repository import documento_desde_mongo
+import pytest
+from pymongo.errors import ServerSelectionTimeoutError
+
+from app.core.exceptions import BaseDeDatosNoDisponible
+from app.core.mongo_repository import MongoPdfRepository, documento_desde_mongo
 
 CREADO = datetime(2026, 9, 14, 18, 0, tzinfo=UTC)
 
@@ -55,3 +59,50 @@ def test_normaliza_fechas_sin_zona_horaria_a_utc():
 
     assert documento.created_at == CREADO
     assert documento.updated_at == CREADO
+
+
+class ColeccionCaida:
+    """Doble de la colección de Motor: cada operación falla como cuando MongoDB no
+    responde."""
+
+    def _fallar(self, *_args, **_kwargs):
+        raise ServerSelectionTimeoutError("mongodb no responde")
+
+    find_one = count_documents = _fallar
+
+    def find(self, *_args, **_kwargs):
+        return self
+
+    def sort(self, *_args, **_kwargs):
+        return self
+
+    def skip(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args, **_kwargs):
+        return self
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        self._fallar()
+
+
+@pytest.mark.parametrize(
+    "consultar",
+    [
+        pytest.param(lambda repo: repo.get_by_id("id"), id="get_by_id"),
+        pytest.param(lambda repo: repo.get_by_checksum("checksum"), id="get_by_checksum"),
+        pytest.param(lambda repo: repo.listar(limit=20, offset=0), id="listar"),
+        pytest.param(lambda repo: repo.contar(), id="contar"),
+    ],
+)
+async def test_traduce_la_caida_de_mongo_a_base_de_datos_no_disponible(consultar):
+    repositorio = MongoPdfRepository(ColeccionCaida())
+
+    with pytest.raises(BaseDeDatosNoDisponible) as error:
+        await consultar(repositorio)
+
+    assert error.value.code == "DATABASE_ERROR"
+    assert error.value.status_code == 503

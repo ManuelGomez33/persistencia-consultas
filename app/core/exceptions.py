@@ -18,3 +18,13 @@ class RecursoNoEncontrado(DomainError):
 class ParametrosInvalidos(DomainError):
     code = "VALIDATION_ERROR"
     status_code = 400
+
+
+class BaseDeDatosNoDisponible(DomainError):
+    code = "DATABASE_ERROR"
+    status_code = 503
+
+
+class CacheNoDisponible(Exception):
+    """La caché no responde. No es un error del contrato: el repositorio cacheado lo
+    absorbe y sigue consultando la base."""

@@ -1,7 +1,10 @@
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.composition import obtener_servicio
+from app.core.exceptions import BaseDeDatosNoDisponible
 from app.core.in_memory_repository import InMemoryPdfRepository
 from app.core.repository import PdfRepository
 from app.main import app
@@ -53,6 +56,17 @@ def test_listar_rechaza_parametros_invalidos(cliente):
     assert respuesta.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+def test_listar_rechaza_parametros_que_no_son_numeros(cliente):
+    respuesta = cliente.get(
+        "/pdf", params={"limit": "abc"}, headers={"X-Correlation-ID": "parametros-invalidos"}
+    )
+
+    assert respuesta.status_code == 400
+    error = respuesta.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert error["correlation_id"] == "parametros-invalidos"
+
+
 def test_buscar_por_id_devuelve_el_documento(cliente):
     respuesta = cliente.get(f"/pdf/{ID_EXISTENTE}")
 
@@ -79,6 +93,13 @@ def test_buscar_por_checksum_devuelve_el_documento(cliente):
 
 def test_buscar_por_checksum_inexistente_devuelve_404(cliente):
     respuesta = cliente.get("/pdf/checksum/checksum-inexistente")
+
+    assert respuesta.status_code == 404
+    assert respuesta.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+def test_una_ruta_inexistente_devuelve_el_error_comun(cliente):
+    respuesta = cliente.get("/no-existe")
 
     assert respuesta.status_code == 404
     assert respuesta.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
@@ -138,3 +159,65 @@ def test_un_fallo_de_infraestructura_devuelve_el_error_comun():
     cuerpo = respuesta.json()
     assert cuerpo["error"]["code"] == "INTERNAL_ERROR"
     assert cuerpo["error"]["correlation_id"]
+
+
+def test_un_fallo_inesperado_devuelve_el_correlation_id_en_la_cabecera():
+    app.dependency_overrides[obtener_servicio] = lambda: ConsultaPdfService(RepositorioCaido())
+    with TestClient(app, raise_server_exceptions=False) as cliente_de_prueba:
+        respuesta = cliente_de_prueba.get(
+            f"/pdf/{ID_EXISTENTE}", headers={"X-Correlation-ID": "fallo-500"}
+        )
+    app.dependency_overrides.clear()
+
+    assert respuesta.headers["X-Correlation-ID"] == "fallo-500"
+    assert respuesta.json()["error"]["correlation_id"] == "fallo-500"
+
+
+class RepositorioSinBase(RepositorioCaido):
+    """Simula el adaptador de Mongo cuando la base no responde."""
+
+    async def get_by_id(self, documento_id: str) -> PdfDocument | None:
+        raise BaseDeDatosNoDisponible("MongoDB no está disponible")
+
+
+def test_la_base_caida_devuelve_database_error():
+    app.dependency_overrides[obtener_servicio] = lambda: ConsultaPdfService(RepositorioSinBase())
+    with TestClient(app, raise_server_exceptions=False) as cliente_de_prueba:
+        respuesta = cliente_de_prueba.get(f"/pdf/{ID_EXISTENTE}")
+    app.dependency_overrides.clear()
+
+    assert respuesta.status_code == 503
+    assert respuesta.json()["error"]["code"] == "DATABASE_ERROR"
+
+
+def registros_con(caplog, correlation_id: str) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if getattr(r, "correlation_id", None) == correlation_id]
+
+
+def test_cada_request_se_registra_con_su_correlation_id(cliente, caplog):
+    caplog.set_level(logging.INFO)
+
+    cliente.get("/pdf", headers={"X-Correlation-ID": "log-123"})
+
+    mensajes = [r.getMessage() for r in registros_con(caplog, "log-123")]
+    assert any("method=GET path=/pdf status=200" in m for m in mensajes)
+
+
+def test_cada_error_se_registra_con_su_codigo(cliente, caplog):
+    caplog.set_level(logging.INFO)
+
+    cliente.get("/pdf/id-inexistente", headers={"X-Correlation-ID": "log-error"})
+
+    mensajes = [r.getMessage() for r in registros_con(caplog, "log-error")]
+    assert any("code=RESOURCE_NOT_FOUND status=404" in m for m in mensajes)
+
+
+def test_un_fallo_inesperado_se_registra_con_la_traza(caplog):
+    caplog.set_level(logging.INFO)
+    app.dependency_overrides[obtener_servicio] = lambda: ConsultaPdfService(RepositorioCaido())
+    with TestClient(app, raise_server_exceptions=False) as cliente_de_prueba:
+        cliente_de_prueba.get(f"/pdf/{ID_EXISTENTE}", headers={"X-Correlation-ID": "log-500"})
+    app.dependency_overrides.clear()
+
+    errores = [r for r in registros_con(caplog, "log-500") if r.levelno == logging.ERROR]
+    assert errores and errores[0].exc_info is not None

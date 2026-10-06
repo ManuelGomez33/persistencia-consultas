@@ -1,6 +1,11 @@
+import hashlib
+import logging
+
 import pytest
 
+from app.core.cache import Cache
 from app.core.cached_repository import CachedPdfRepository
+from app.core.exceptions import CacheNoDisponible
 from app.core.in_memory_cache import InMemoryCache
 from app.core.in_memory_repository import InMemoryPdfRepository
 
@@ -73,7 +78,51 @@ async def test_listados_con_distinta_paginacion_no_comparten_cache(documento, ca
     assert await con_documentos([], cache).listar(limit=20, offset=1) == []
 
 
-async def test_el_total_se_sirve_desde_cache(documento, cache):
+def clave_de_listado(limit: int, offset: int) -> str:
+    """Clave del contrato: pdf:list:{hash-de-parametros}."""
+    parametros = f"limit={limit}&offset={offset}"
+    return f"pdf:list:{hashlib.sha256(parametros.encode()).hexdigest()}"
+
+
+async def test_el_listado_usa_la_clave_del_contrato(documento, cache):
+    await con_documentos([documento()], cache).listar(limit=20, offset=0)
+
+    assert await cache.get(clave_de_listado(20, 0)) is not None
+    assert await cache.get("pdf:list:20:0") is None
+
+
+async def test_el_total_no_se_cachea(documento, cache):
+    # pdf:total no es una clave del contrato: persistencia-actualizaciones no la
+    # invalidaría al escribir y el total quedaría viejo hasta que venza el TTL.
     await con_documentos([documento()], cache).contar()
 
-    assert await con_documentos([], cache).contar() == 1
+    assert await con_documentos([], cache).contar() == 0
+    assert await cache.get("pdf:total") is None
+
+
+class CacheCaida(Cache):
+    """Simula el adaptador de Redis cuando Redis no responde."""
+
+    async def get(self, clave: str) -> str | None:
+        raise CacheNoDisponible("Redis no está disponible")
+
+    async def set(self, clave: str, valor: str, ttl_seconds: int) -> None:
+        raise CacheNoDisponible("Redis no está disponible")
+
+
+async def test_sin_redis_el_documento_se_busca_en_el_repositorio(documento):
+    esperado = documento()
+
+    assert await con_documentos([esperado], CacheCaida()).get_by_id(esperado.id) == esperado
+
+
+async def test_sin_redis_el_listado_se_busca_en_el_repositorio(documento):
+    esperado = documento()
+
+    assert await con_documentos([esperado], CacheCaida()).listar(limit=20, offset=0) == [esperado]
+
+
+async def test_sin_redis_se_registra_una_advertencia(documento, caplog):
+    await con_documentos([documento()], CacheCaida()).get_by_id(documento().id)
+
+    assert any(r.levelno == logging.WARNING for r in caplog.records)

@@ -73,15 +73,34 @@ Todos los errores usan el formato común del contrato:
 
 | Código | HTTP | Cuándo |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | `limit` fuera de 1–100 u `offset` negativo. |
-| `RESOURCE_NOT_FOUND` | 404 | No existe un documento con ese ID o checksum. |
-| `INTERNAL_ERROR` | 500 | Fallo inesperado, incluida una dependencia caída. |
+| `VALIDATION_ERROR` | 400 | `limit` fuera de 1–100, `offset` negativo, o parámetros que no son números. |
+| `RESOURCE_NOT_FOUND` | 404 | No existe un documento con ese ID o checksum, o la ruta no existe. |
+| `DATABASE_ERROR` | 503 | MongoDB no responde. |
+| `INTERNAL_ERROR` | 500 | Fallo inesperado. |
+
+Si Redis no responde, **no** es un error: la consulta sigue contra MongoDB (ver *Caché
+cache-aside*).
 
 ### Correlation ID
 
 El servicio propaga la cabecera `X-Correlation-ID`. Si la petición la trae, la reutiliza y
 la devuelve en la respuesta; si no, genera un UUID. El mismo identificador aparece en el
 cuerpo de los errores, para poder seguir una operación entre microservicios.
+
+### Logs
+
+Los logs van a `stdout` (12-Factor XI), sin archivos, y **cada línea** lleva el
+`correlation_id`: el middleware lo guarda en una `ContextVar` y una *record factory* lo
+agrega a cada registro, así que lo tienen también los logs de los adaptadores.
+
+```text
+2026-10-06 19:55:01,905 INFO app.main correlation_id=demo-1 method=GET path=/pdf status=200 duracion_ms=3.4
+2026-10-06 19:55:01,907 WARNING app.main correlation_id=demo-2 code=RESOURCE_NOT_FOUND status=404 message=No existe un documento con id nada
+```
+
+Cada request se registra con método, ruta, status y duración; cada error con su código
+(`WARNING` para 4xx, `ERROR` con traza para 5xx). El access log de uvicorn está desactivado
+en la imagen porque no lleva el `correlation_id`.
 
 ## Levantar con Docker (recomendado)
 
@@ -103,6 +122,9 @@ docker compose down -v         # borra también los volúmenes
 ## Levantar sin Docker
 
 Requiere Python 3.12+, [uv](https://docs.astral.sh/uv/), y MongoDB y Redis accesibles.
+El `docker-compose.yml` no publica los puertos de MongoDB ni Redis en el host (chocan con
+los entrypoints TCP de Traefik de la infraestructura del equipo), así que para correr el
+servicio fuera de Docker hace falta un MongoDB y un Redis propios.
 
 ```bash
 uv sync
@@ -183,7 +205,7 @@ Después de las consultas anteriores, las claves deben existir en Redis:
 docker compose exec redis redis-cli KEYS "pdf:*"
 ```
 
-Debe listar `pdf:id:...`, `pdf:checksum:...`, `pdf:list:20:0` y `pdf:total`. Esa es la
+Debe listar `pdf:id:...`, `pdf:checksum:...` y `pdf:list:<hash>`. Esa es la
 prueba de que la respuesta se guardó: la primera consulta fue un MISS contra MongoDB y las
 siguientes se sirven desde Redis.
 
@@ -192,6 +214,7 @@ siguientes se sirven desde Redis.
 ```bash
 curl -i http://localhost:8000/pdf/no-existe          # 404 RESOURCE_NOT_FOUND
 curl -i "http://localhost:8000/pdf?limit=0"          # 400 VALIDATION_ERROR
+curl -i "http://localhost:8000/pdf?limit=abc"        # 400 VALIDATION_ERROR
 ```
 
 ## Tests
@@ -212,10 +235,15 @@ Se testea:
 - Las reglas de negocio del service, contra el repositorio en memoria.
 - El puerto `PdfRepository`, con la misma suite corriendo contra sus dos implementaciones
   hermeticas (en memoria y en memoria + caché), lo que demuestra que son intercambiables.
-- El cache-aside: HIT, MISS, aislamiento de claves y serialización de ida y vuelta.
-- Los endpoints HTTP completos, con códigos de estado, formato de errores y correlation ID.
+- El cache-aside: HIT, MISS, claves del contrato, serialización de ida y vuelta y la
+  degradación cuando Redis no responde.
+- La traducción de errores de los adaptadores: una colección de Motor y un cliente de
+  Redis de prueba, inyectados por constructor, que fallan como sin conexión.
+- Los endpoints HTTP completos, con códigos de estado, formato de errores, correlation ID
+  y logs.
 
-No se testea, a propósito: los adaptadores de MongoDB y Redis. Ver *Deuda técnica*.
+No se testea, a propósito: las llamadas reales a MongoDB y Redis y el cierre de las
+conexiones al apagar. Ver *Deuda técnica*.
 
 ## Arquitectura
 
@@ -243,8 +271,9 @@ app/
     ├── in_memory_cache.py       # adaptador en memoria (tests)
     ├── redis_cache.py           # adaptador Redis
     ├── database.py              # creación de clientes
-    ├── composition.py           # inyección de dependencias
+    ├── composition.py           # inyección de dependencias y cierre de conexiones
     ├── config.py                # configuración
+    ├── logs.py                  # logs a stdout con correlation_id
     └── exceptions.py            # errores de dominio
 ```
 
@@ -261,7 +290,18 @@ Flujo: `controller → service → repository → base de datos`.
 `CachedPdfRepository` envuelve a otro `PdfRepository`: busca en Redis, y ante un MISS
 consulta MongoDB y guarda el resultado con el TTL configurado.
 
-Claves: `pdf:id:{id}`, `pdf:checksum:{checksum}`, `pdf:list:{limit}:{offset}`, `pdf:total`.
+Claves (las del contrato): `pdf:id:{id}`, `pdf:checksum:{checksum}` y
+`pdf:list:{hash}`, donde el hash es el SHA-256 de `limit={limit}&offset={offset}`.
+
+El `total` del listado **no se cachea**: se cuenta en MongoDB en cada listado. No hay una
+clave del contrato para él, así que `persistencia-actualizaciones` no la invalidaría al
+escribir y el total quedaría viejo hasta que venza el TTL. Lo que sí tiene que hacer
+`persistencia-actualizaciones` después de cada escritura es invalidar `pdf:id:{id}`,
+`pdf:checksum:{checksum}` y todas las `pdf:list:*`.
+
+**Si Redis no responde**, el adaptador lo informa como `CacheNoDisponible`, el decorador
+registra un `WARNING` y la consulta sigue contra MongoDB: la caché acelera, pero no es un
+punto único de falla.
 
 Como decorador, la caché se puede quitar del cableado sin tocar el service ni el adaptador
 de MongoDB.
@@ -282,21 +322,21 @@ de MongoDB.
   puede repetir o saltear documentos entre páginas.
 - **El mensaje de los errores 500 es genérico.** El detalle interno puede revelar la
   topología del sistema; la trazabilidad se resuelve con el `correlation_id`.
+- **MongoDB caído es `DATABASE_ERROR` 503, no `INTERNAL_ERROR`.** El contrato distingue la
+  dependencia caída del fallo inesperado; el adaptador traduce los errores de pymongo.
 
 El registro completo del desarrollo, paso por paso, está en [BITACORA.md](BITACORA.md).
 
 ## Deuda técnica
 
-- **Los adaptadores de MongoDB y Redis no tienen tests automatizados.**
+- **Las llamadas reales a MongoDB y Redis no tienen tests automatizados.**
   `MongoPdfRepository` y `RedisCache` son envoltorios delgados sobre Motor y
-  `redis.asyncio`: cada método es una llamada directa al driver. Cubrirlos exigiría
-  levantar contenedores reales, lo que rompería la regla de que la suite corra sin red ni
-  bases de datos. Lo único con lógica propia —la traducción de un documento de MongoDB a
-  la entidad de dominio— sí está cubierto en `tests/unit/test_mongo_repository.py`. Se
-  cubrirían con tests de integración contra contenedores efímeros.
-- **Si Redis no está disponible, la consulta falla con `INTERNAL_ERROR`.** La alternativa
-  —degradar y responder igual desde MongoDB, ignorando la caché— es mejor comportamiento
-  para un servicio de lectura, pero no está implementada.
+  `redis.asyncio`. Lo que tienen de lógica propia sí está cubierto: la traducción de un
+  documento de MongoDB a la entidad de dominio y la traducción de los errores de cada
+  driver. Las consultas reales se cubrirían con tests de integración contra contenedores
+  efímeros.
+- **El cierre de conexiones al apagar no tiene test.** Se verificó a mano creando los
+  clientes reales y cerrándolos; testearlo en la suite exigiría parchear la composición.
 - **La caché no simula vencimiento en los tests.** `InMemoryCache` guarda sin expirar: el
   TTL es responsabilidad de Redis.
 - **La colección de MongoDB no se crea con índices desde este servicio.** Las consultas por
