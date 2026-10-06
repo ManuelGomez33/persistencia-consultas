@@ -17,10 +17,11 @@ services:
       redis:
         condition: service_healthy
 
+  # MongoDB y Redis no publican puertos en el host: el servicio los alcanza por nombre
+  # dentro de la red del compose, y la infraestructura del equipo (Traefik) ya usa 27017
+  # y 6379 como entrypoints TCP.
   mongodb:
     image: mongo:7.0
-    ports:
-      - "27017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -31,8 +32,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
