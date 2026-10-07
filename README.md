@@ -306,6 +306,11 @@ escribir y el total quedaría viejo hasta que venza el TTL. Lo que sí tiene que
 registra un `WARNING` y la consulta sigue contra MongoDB: la caché acelera, pero no es un
 punto único de falla.
 
+El cliente de Redis usa timeouts de 1 s y no reintenta (igual que
+`persistencia-actualizaciones`), y si la lectura ya falló no se intenta guardar el resultado:
+con Redis caído cada consulta tarda alrededor de 1 s de más, en lugar de los ~4 s del cliente
+con su configuración por defecto.
+
 Como decorador, la caché se puede quitar del cableado sin tocar el service ni el adaptador
 de MongoDB.
 

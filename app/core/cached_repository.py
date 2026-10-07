@@ -38,12 +38,13 @@ class CachedPdfRepository(PdfRepository):
     async def listar(self, limit: int, offset: int) -> list[PdfDocument]:
         parametros = f"limit={limit}&offset={offset}"
         clave = f"pdf:list:{hashlib.sha256(parametros.encode()).hexdigest()}"
-        cacheado = await self._leer(clave)
+        disponible, cacheado = await self._leer(clave)
         if cacheado is not None:
             return [_desde_dict(datos) for datos in json.loads(cacheado)]
 
         documentos = await self._repository.listar(limit=limit, offset=offset)
-        await self._guardar(clave, [_a_dict(documento) for documento in documentos])
+        if disponible:
+            await self._guardar(clave, [_a_dict(documento) for documento in documentos])
         return documentos
 
     async def contar(self) -> int:
@@ -56,23 +57,25 @@ class CachedPdfRepository(PdfRepository):
         clave: str,
         consultar: Callable[[], Awaitable[PdfDocument | None]],
     ) -> PdfDocument | None:
-        cacheado = await self._leer(clave)
+        disponible, cacheado = await self._leer(clave)
         if cacheado is not None:
             return _desde_dict(json.loads(cacheado))
 
         documento = await consultar()
         # Un documento ausente no se cachea: podría crearse dentro del TTL y quedaría
         # invisible hasta que la entrada venza.
-        if documento is not None:
+        if documento is not None and disponible:
             await self._guardar(clave, _a_dict(documento))
         return documento
 
-    async def _leer(self, clave: str) -> str | None:
+    async def _leer(self, clave: str) -> tuple[bool, str | None]:
+        """Devuelve (caché disponible, valor). Si la caché no respondió al leer, quien
+        llama no intenta guardar: sería esperar otro timeout para nada."""
         try:
-            return await self._cache.get(clave)
+            return True, await self._cache.get(clave)
         except CacheNoDisponible:
             logger.warning("cache no disponible al leer %s; se consulta el repositorio", clave)
-            return None
+            return False, None
 
     async def _guardar(self, clave: str, valor: object) -> None:
         try:
