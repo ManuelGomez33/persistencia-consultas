@@ -101,12 +101,16 @@ async def test_el_total_no_se_cachea(documento, cache):
 
 
 class CacheCaida(Cache):
-    """Simula el adaptador de Redis cuando Redis no responde."""
+    """Simula el adaptador de Redis cuando Redis no responde; cuenta las escrituras."""
+
+    def __init__(self) -> None:
+        self.escrituras = 0
 
     async def get(self, clave: str) -> str | None:
         raise CacheNoDisponible("Redis no está disponible")
 
     async def set(self, clave: str, valor: str, ttl_seconds: int) -> None:
+        self.escrituras += 1
         raise CacheNoDisponible("Redis no está disponible")
 
 
@@ -126,3 +130,22 @@ async def test_sin_redis_se_registra_una_advertencia(documento, caplog):
     await con_documentos([documento()], CacheCaida()).get_by_id(documento().id)
 
     assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "consultar",
+    [
+        pytest.param(lambda repo, doc: repo.get_by_id(doc.id), id="por-id"),
+        pytest.param(lambda repo, doc: repo.get_by_checksum(doc.checksum), id="por-checksum"),
+        pytest.param(lambda repo, doc: repo.listar(limit=20, offset=0), id="listado"),
+    ],
+)
+async def test_si_la_lectura_de_cache_fallo_no_se_intenta_guardar(documento, consultar):
+    # Cada intento contra Redis caído espera el timeout del cliente: si la lectura ya
+    # falló, guardar el resultado solo sumaría otra espera.
+    cache = CacheCaida()
+    esperado = documento()
+
+    await consultar(con_documentos([esperado], cache), esperado)
+
+    assert cache.escrituras == 0
