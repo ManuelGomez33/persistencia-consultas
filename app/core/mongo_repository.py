@@ -11,11 +11,14 @@ from app.models.pdf_document import PdfDocument
 
 
 class MongoPdfRepository(PdfRepository):
+    """Lee la colección que escribe persistencia-actualizaciones: el UUID del documento
+    va en `_id` (su contrato, A10), que además ya está indexado."""
+
     def __init__(self, coleccion: AsyncIOMotorCollection) -> None:
         self._coleccion = coleccion
 
     async def get_by_id(self, documento_id: str) -> PdfDocument | None:
-        return await self._buscar_uno({"id": documento_id})
+        return await self._buscar_uno({"_id": documento_id})
 
     async def get_by_checksum(self, checksum: str) -> PdfDocument | None:
         return await self._buscar_uno({"checksum": checksum})
@@ -46,7 +49,7 @@ def _base_no_disponible_si_falla() -> Iterator[None]:
 
 def documento_desde_mongo(datos: dict) -> PdfDocument:
     return PdfDocument(
-        id=datos["id"],
+        id=datos["_id"],
         nombre=datos["nombre"],
         checksum=datos["checksum"],
         texto=datos["texto"],
