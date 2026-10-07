@@ -3,13 +3,15 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.composition import obtener_servicio
+from app.core.composition import obtener_servicio, obtener_servicio_salud
 from app.core.exceptions import BaseDeDatosNoDisponible
 from app.core.in_memory_repository import InMemoryPdfRepository
 from app.core.repository import PdfRepository
 from app.main import app
 from app.models.pdf_document import PdfDocument
 from app.services.consulta_service import ConsultaPdfService
+from app.services.salud_service import SaludService
+from tests.dobles import DependenciaFija
 
 ID_EXISTENTE = "8f6f7c3e-12d5-4f57-9c6c-123456789abc"
 CHECKSUM_EXISTENTE = "a7f5f35426b927411fc9231b56382173"
@@ -19,6 +21,9 @@ CHECKSUM_EXISTENTE = "a7f5f35426b927411fc9231b56382173"
 def cliente(documento):
     servicio = ConsultaPdfService(InMemoryPdfRepository([documento()]))
     app.dependency_overrides[obtener_servicio] = lambda: servicio
+    app.dependency_overrides[obtener_servicio_salud] = lambda: SaludService(
+        DependenciaFija(True), DependenciaFija(True)
+    )
     with TestClient(app) as cliente_de_prueba:
         yield cliente_de_prueba
     app.dependency_overrides.clear()
@@ -28,7 +33,38 @@ def test_health_responde_ok(cliente):
     respuesta = cliente.get("/health")
 
     assert respuesta.status_code == 200
-    assert respuesta.json() == {"status": "ok"}
+    assert respuesta.json() == {
+        "status": "ok",
+        "dependencias": {"mongodb": "ok", "redis": "ok"},
+    }
+
+
+def test_health_con_redis_caido_sigue_ok_e_informa(cliente):
+    app.dependency_overrides[obtener_servicio_salud] = lambda: SaludService(
+        DependenciaFija(True), DependenciaFija(False)
+    )
+
+    respuesta = cliente.get("/health")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == {
+        "status": "ok",
+        "dependencias": {"mongodb": "ok", "redis": "caido"},
+    }
+
+
+def test_health_con_mongodb_caido_responde_503(cliente):
+    app.dependency_overrides[obtener_servicio_salud] = lambda: SaludService(
+        DependenciaFija(False), DependenciaFija(True)
+    )
+
+    respuesta = cliente.get("/health")
+
+    assert respuesta.status_code == 503
+    assert respuesta.json() == {
+        "status": "error",
+        "dependencias": {"mongodb": "caido", "redis": "ok"},
+    }
 
 
 def test_listar_devuelve_la_forma_del_contrato(cliente):
