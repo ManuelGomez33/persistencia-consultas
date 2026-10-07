@@ -45,8 +45,8 @@ Documentación interactiva, con el servicio levantado: <http://localhost:8000/do
   "texto": "Contenido extraído del PDF",
   "tamano_bytes": 245760,
   "paginas": 3,
-  "created_at": "2026-09-14T18:00:00Z",
-  "updated_at": "2026-09-14T18:00:00Z"
+  "created_at": "2026-09-14T18:00:00.000Z",
+  "updated_at": "2026-09-14T18:00:00.000Z"
 }
 ```
 
@@ -168,7 +168,7 @@ Este servicio no crea documentos: en el sistema completo los crea
 ```bash
 docker compose exec mongodb mongosh pdfs_db --quiet --eval '
 db.pdfs.insertOne({
-  id: "8f6f7c3e-12d5-4f57-9c6c-123456789abc",
+  _id: "8f6f7c3e-12d5-4f57-9c6c-123456789abc",
   nombre: "contrato.pdf",
   checksum: "a7f5f35426b927411fc9231b56382173",
   texto: "Contenido extraido del PDF",
@@ -188,6 +188,9 @@ curl http://localhost:8000/pdf/checksum/a7f5f35426b927411fc9231b56382173
 ```
 
 Las tres deben devolver el documento recién insertado.
+
+El documento se inserta con el mismo esquema que escribe `persistencia-actualizaciones`
+(su contrato, ambigüedad A10): el UUID va en `_id` y no hay un campo `id`.
 
 > **Insertar antes de consultar.** Si se consulta `GET /pdf` con la base vacía, la caché
 > guarda ese listado vacío durante `REDIS_TTL_SECONDS` y las consultas siguientes lo van a
@@ -322,6 +325,10 @@ de MongoDB.
   puede repetir o saltear documentos entre páginas.
 - **El mensaje de los errores 500 es genérico.** El detalle interno puede revelar la
   topología del sistema; la trazabilidad se resuelve con el `correlation_id`.
+- **El esquema de MongoDB lo define `persistencia-actualizaciones`**, que es el único que
+  escribe: UUID en `_id` (ya indexado) y fechas como `date` BSON. Las fechas se devuelven
+  con milisegundos y `Z` (`2026-09-14T18:00:00.000Z`), igual que su `POST`, para que el
+  mismo documento muestre la misma fecha en los dos servicios.
 - **MongoDB caído es `DATABASE_ERROR` 503, no `INTERNAL_ERROR`.** El contrato distingue la
   dependencia caída del fallo inesperado; el adaptador traduce los errores de pymongo.
 
