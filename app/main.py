@@ -26,9 +26,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     # Construir Settings acá hace que una configuración incompleta falle al arrancar
     # y no en la primera consulta.
-    obtener_settings()
+    logging.getLogger().setLevel(obtener_settings().log_level)
+    logger.info("servicio iniciado")
     yield
+    # uvicorn llega acá ante SIGTERM, después de cerrar el puerto y terminar las
+    # consultas en curso (12-Factor IX).
+    logger.info("apagado iniciado")
     await cerrar_conexiones()
+    logger.info("apagado completo")
 
 
 app = FastAPI(

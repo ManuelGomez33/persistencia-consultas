@@ -72,10 +72,12 @@ class CachedPdfRepository(PdfRepository):
         """Devuelve (caché disponible, valor). Si la caché no respondió al leer, quien
         llama no intenta guardar: sería esperar otro timeout para nada."""
         try:
-            return True, await self._cache.get(clave)
+            valor = await self._cache.get(clave)
         except CacheNoDisponible:
             logger.warning("cache no disponible al leer %s; se consulta el repositorio", clave)
             return False, None
+        logger.info("cache %s clave=%s", "MISS" if valor is None else "HIT", clave)
+        return True, valor
 
     async def _guardar(self, clave: str, valor: object) -> None:
         try:
