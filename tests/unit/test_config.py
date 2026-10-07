@@ -25,3 +25,14 @@ def test_settings_falla_si_falta_una_variable_obligatoria(monkeypatch):
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_log_level_es_opcional_e_info_por_defecto():
+    assert Settings().log_level == "INFO"
+
+
+def test_log_level_invalido_impide_arrancar(monkeypatch):
+    monkeypatch.setenv("LOG_LEVEL", "VERBOSE")
+
+    with pytest.raises(ValidationError):
+        Settings()

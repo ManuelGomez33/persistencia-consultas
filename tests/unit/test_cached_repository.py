@@ -149,3 +149,32 @@ async def test_si_la_lectura_de_cache_fallo_no_se_intenta_guardar(documento, con
     await consultar(con_documentos([esperado], cache), esperado)
 
     assert cache.escrituras == 0
+
+
+async def test_registra_miss_y_hit_en_info(documento, cache, caplog):
+    caplog.set_level(logging.INFO)
+    esperado = documento()
+    repositorio = con_documentos([esperado], cache)
+
+    await repositorio.get_by_id(esperado.id)
+    await repositorio.get_by_id(esperado.id)
+
+    mensajes = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+    assert mensajes == [
+        f"cache MISS clave=pdf:id:{esperado.id}",
+        f"cache HIT clave=pdf:id:{esperado.id}",
+    ]
+
+
+async def test_los_logs_no_incluyen_datos_del_documento(documento, cache, caplog):
+    caplog.set_level(logging.DEBUG)
+    esperado = documento()
+    repositorio = con_documentos([esperado], cache)
+
+    await repositorio.get_by_id(esperado.id)
+    await repositorio.listar(limit=20, offset=0)
+    await repositorio.listar(limit=20, offset=0)
+
+    todo = "\n".join(r.getMessage() for r in caplog.records)
+    assert esperado.nombre not in todo
+    assert esperado.texto not in todo
