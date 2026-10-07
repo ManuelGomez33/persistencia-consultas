@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 
 from app.schemas.pdf import PdfDocumentResponse, PdfListResponse
 
@@ -19,8 +20,19 @@ def test_response_serializa_las_fechas_en_iso_8601_utc(documento):
 
     serializado = json.loads(respuesta.model_dump_json())
 
-    assert serializado["created_at"] == "2026-09-14T18:00:00Z"
-    assert serializado["updated_at"] == "2026-09-14T18:00:00Z"
+    assert serializado["created_at"] == "2026-09-14T18:00:00.000Z"
+    assert serializado["updated_at"] == "2026-09-14T18:00:00.000Z"
+
+
+def test_response_serializa_las_fechas_con_milisegundos(documento):
+    # Mismo formato que devuelve persistencia-actualizaciones (su contrato, A15):
+    # MongoDB guarda milisegundos, así el POST y el GET del mismo documento coinciden.
+    creado = datetime(2026, 9, 14, 18, 0, 0, 123000, tzinfo=UTC)
+    respuesta = PdfDocumentResponse.from_domain(documento(created_at=creado))
+
+    serializado = json.loads(respuesta.model_dump_json())
+
+    assert serializado["created_at"] == "2026-09-14T18:00:00.123Z"
 
 
 def test_listado_respeta_la_forma_del_contrato(documento):

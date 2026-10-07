@@ -74,7 +74,7 @@ def test_buscar_por_id_devuelve_el_documento(cliente):
     cuerpo = respuesta.json()
     assert cuerpo["id"] == ID_EXISTENTE
     assert cuerpo["nombre"] == "contrato.pdf"
-    assert cuerpo["created_at"] == "2026-09-14T18:00:00Z"
+    assert cuerpo["created_at"] == "2026-09-14T18:00:00.000Z"
 
 
 def test_buscar_por_id_inexistente_devuelve_404(cliente):
