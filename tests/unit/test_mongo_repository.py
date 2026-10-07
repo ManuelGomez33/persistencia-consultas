@@ -10,9 +10,10 @@ CREADO = datetime(2026, 9, 14, 18, 0, tzinfo=UTC)
 
 
 def datos_de_mongo(**campos) -> dict:
+    """Documento tal como lo guarda persistencia-actualizaciones (su contrato, A10):
+    el UUID va en `_id` y no hay un campo `id`."""
     valores = {
-        "_id": "identificador-interno-de-mongo",
-        "id": "8f6f7c3e-12d5-4f57-9c6c-123456789abc",
+        "_id": "8f6f7c3e-12d5-4f57-9c6c-123456789abc",
         "nombre": "contrato.pdf",
         "checksum": "a7f5f35426b927411fc9231b56382173",
         "texto": "Contenido extraído del PDF",
@@ -37,10 +38,26 @@ def test_mapea_los_campos_del_contrato():
     assert documento.updated_at == CREADO
 
 
-def test_descarta_el_identificador_interno_de_mongo():
-    documento = documento_desde_mongo(datos_de_mongo())
+class ColeccionQueRegistra:
+    """Doble de la colección de Motor: guarda el filtro de cada find_one."""
 
-    assert "identificador-interno-de-mongo" not in vars(documento).values()
+    def __init__(self) -> None:
+        self.filtros: list[dict] = []
+
+    async def find_one(self, filtro: dict) -> dict:
+        self.filtros.append(filtro)
+        return datos_de_mongo()
+
+
+async def test_busca_por_id_en_el_campo__id():
+    coleccion = ColeccionQueRegistra()
+
+    documento = await MongoPdfRepository(coleccion).get_by_id(
+        "8f6f7c3e-12d5-4f57-9c6c-123456789abc"
+    )
+
+    assert coleccion.filtros == [{"_id": "8f6f7c3e-12d5-4f57-9c6c-123456789abc"}]
+    assert documento.id == "8f6f7c3e-12d5-4f57-9c6c-123456789abc"
 
 
 def test_admite_un_documento_sin_paginas():

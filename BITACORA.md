@@ -265,6 +265,18 @@ comportamiento:
 8. El compose ya no publica 27017 ni 6379 (chocaban con Traefik) y la imagen desactiva el
    access log de uvicorn.
 
+### 2026-10-06 — Alineación con persistencia-actualizaciones
+
+Al auditar `persistencia-actualizaciones` apareció que los dos servicios no acordaban el
+esquema de la colección compartida: actualizaciones guarda el UUID en `_id` (sin campo
+`id`) y lo documentó como ambigüedad A10; consultas buscaba por `id`. Juntos, consultas no
+encontraba nada por id y fallaba al leer por checksum. Rama
+`fix/esquema-mongo-actualizaciones`, con commit rojo antes de cada cambio:
+
+1. Búsqueda por `{_id: ...}` y mapeo de `_id` al `id` de la entidad.
+2. Fechas serializadas con milisegundos y `Z` (A15), igual que el `POST` de
+   actualizaciones.
+
 ## Decisiones técnicas
 
 - **Sin prefijo de API.** El contrato compartido define las rutas en `/pdf`, no bajo
