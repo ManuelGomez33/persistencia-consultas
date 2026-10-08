@@ -39,7 +39,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="persistencia-consultas",
     description="Consulta de documentos PDF con MongoDB y caché Redis.",
-    version="1.0.0",
+    version="1.0.3",
     lifespan=lifespan,
 )
 
