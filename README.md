@@ -153,6 +153,12 @@ docker compose down            # conserva los datos
 docker compose down -v         # borra también los volúmenes
 ```
 
+La versión del servicio es la de `pyproject.toml` (1.0.3): es la que muestra Swagger en
+`/docs` y el tag de la imagen. `tests/integration/test_openapi.py` verifica que
+`FastAPI(version=...)` en `app/main.py` coincida con `pyproject.toml`; en una versión
+nueva se cambian los dos.
+En la integración la imagen se publica como `persistencia-consultas:1.0.3`.
+
 ## Levantar sin Docker
 
 Requiere Python 3.12+, [uv](https://docs.astral.sh/uv/), y MongoDB y Redis accesibles.
