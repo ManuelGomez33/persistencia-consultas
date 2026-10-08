@@ -1,6 +1,5 @@
 FROM python:3.12-slim
 
-COPY --from=ghcr.io/astral-sh/uv:0.11.3 /uv /usr/local/bin/uv
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -11,7 +10,11 @@ WORKDIR /app
 # Las dependencias se instalan antes de copiar el codigo: mientras el lock no cambie,
 # esta capa se reutiliza entre builds.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+# uv se monta solo durante este RUN (--mount=from=...) y no queda en la imagen final:
+# Grype marcaba High en librerías de Rust compiladas dentro del binario (quinn-proto,
+# rustls-webpki).
+RUN --mount=from=ghcr.io/astral-sh/uv:0.11.3,source=/uv,target=/bin/uv \
+    uv sync --frozen --no-dev
 
 COPY logging.json ./
 COPY app ./app
