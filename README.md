@@ -24,14 +24,14 @@ No hace, a propósito:
 
 ## Endpoints
 
-Contrato compartido `microservicios-pdf` v1.0.0.
+Contrato compartido `microservicios-pdf` v1.2.0 (en el repo `integracion`).
 
 | Método | Ruta | Descripción |
 |---|---|---|
 | `GET` | `/pdf` | Lista documentos. Parámetros `limit` (1–100, por defecto 20) y `offset` (≥ 0). |
 | `GET` | `/pdf/{id}` | Busca un documento por ID. |
 | `GET` | `/pdf/checksum/{checksum}` | Busca un documento por checksum. |
-| `GET` | `/health` | Healthcheck. |
+| `GET` | `/health` | Estado del servicio y de MongoDB y Redis (ver abajo). |
 
 Documentación interactiva, con el servicio levantado: <http://localhost:8000/docs>
 
@@ -87,20 +87,54 @@ El servicio propaga la cabecera `X-Correlation-ID`. Si la petición la trae, la 
 la devuelve en la respuesta; si no, genera un UUID. El mismo identificador aparece en el
 cuerpo de los errores, para poder seguir una operación entre microservicios.
 
-### Logs
+### `GET /health` (contrato 1.2.0)
 
-Los logs van a `stdout` (12-Factor XI), sin archivos, y **cada línea** lleva el
-`correlation_id`: el middleware lo guarda en una `ContextVar` y una *record factory* lo
-agrega a cada registro, así que lo tienen también los logs de los adaptadores.
+Consulta MongoDB (`ping`, cortado a 1 s) y Redis (`PING`, con el timeout de 1 s del
+cliente) e informa cada uno:
 
-```text
-2026-10-06 19:55:01,905 INFO app.main correlation_id=demo-1 method=GET path=/pdf status=200 duracion_ms=3.4
-2026-10-06 19:55:01,907 WARNING app.main correlation_id=demo-2 code=RESOURCE_NOT_FOUND status=404 message=No existe un documento con id nada
+```json
+{"status": "ok", "dependencias": {"mongodb": "ok", "redis": "caido"}}
 ```
 
-Cada request se registra con método, ruta, status y duración; cada error con su código
-(`WARNING` para 4xx, `ERROR` con traza para 5xx). El access log de uvicorn está desactivado
-en la imagen porque no lleva el `correlation_id`.
+| MongoDB | Redis | Respuesta |
+|---|---|---|
+| `ok` | `ok` o `caido` | `200`, `"status": "ok"`: sin caché las consultas siguen contra MongoDB |
+| `caido` | cualquiera | `503`, `"status": "error"`: el `HEALTHCHECK` de la imagen falla |
+
+Probado en el stack de integración (2026-10-07): con Redis detenido responde `200` y
+`"redis": "caido"`; con MongoDB detenido, `503` en 1,0 s.
+
+### Logs (12-Factor XI)
+
+Van a `stdout`, sin archivos. La configuración está en [`logging.json`](logging.json), en
+la raíz del repo (formato `dictConfig`; `pymongo` en `WARNING`), y el nivel sale de
+`LOG_LEVEL`, que se aplica en el `lifespan`. **Cada línea** lleva el `correlation_id`: el
+middleware lo guarda en una `ContextVar` y una *record factory* lo agrega a cada registro,
+así que lo tienen también los logs de los adaptadores.
+
+```text
+INFO app.main correlation_id=- servicio iniciado
+INFO app.core.cached_repository correlation_id=demo-1 cache MISS clave=pdf:id:8f6f7c3e-...
+INFO app.main correlation_id=demo-1 method=GET path=/pdf/8f6f7c3e-... status=200 duracion_ms=8.2
+INFO app.core.cached_repository correlation_id=demo-2 cache HIT clave=pdf:id:8f6f7c3e-...
+WARNING app.main correlation_id=demo-3 code=RESOURCE_NOT_FOUND status=404 message=No existe un documento con id nada
+```
+
+| Nivel | Qué registra este servicio |
+|---|---|
+| `INFO` | Cada request (método, ruta, status, duración), caché `HIT` o `MISS` con su clave, inicio y apagado. |
+| `WARNING` | Redis no disponible (se sigue contra MongoDB) y errores del contrato devueltos al cliente. |
+| `ERROR` | Errores no previstos, con traza. |
+
+**No se registran** el nombre ni el texto de los documentos (hay un test que lo verifica).
+El access log de uvicorn está desactivado en la imagen porque lo registra la app.
+
+### Finalización segura (12-Factor IX)
+
+La imagen corre uvicorn como PID 1 con `--timeout-graceful-shutdown 30`. Ante `SIGTERM`
+(`docker stop`) deja de aceptar conexiones, termina las consultas en curso y en el
+`lifespan` cierra MongoDB y Redis (`apagado iniciado` / `apagado completo`); sale con
+código 0 (probado con la imagen `1.0.2`).
 
 ## Levantar con Docker (recomendado)
 
@@ -134,7 +168,8 @@ uv run uvicorn app.main:app --reload
 
 ## Variables de entorno
 
-Todas son obligatorias: si falta alguna, el servicio no arranca. Ver `.env.example`.
+Todas son obligatorias salvo `LOG_LEVEL`: si falta alguna, el servicio no arranca. Ver
+`.env.example`.
 
 | Variable | Ejemplo | Para qué |
 |---|---|---|
@@ -143,6 +178,7 @@ Todas son obligatorias: si falta alguna, el servicio no arranca. Ver `.env.examp
 | `MONGO_COLLECTION` | `pdfs` | Colección de documentos. |
 | `REDIS_URL` | `redis://localhost:6379/0` | Conexión a Redis. |
 | `REDIS_TTL_SECONDS` | `300` | Segundos que vive cada entrada de caché. |
+| `LOG_LEVEL` | `INFO` | Opcional (contrato 1.2.0): `DEBUG`, `INFO`, `WARNING` o `ERROR`. Otro valor impide arrancar. |
 
 El archivo `.env` está en `.gitignore` y nunca se versiona. `docker-compose.yml` define
 estos valores directamente, porque apuntan a los servicios de su propia red y no son
@@ -244,6 +280,11 @@ Se testea:
   Redis de prueba, inyectados por constructor, que fallan como sin conexión.
 - Los endpoints HTTP completos, con códigos de estado, formato de errores, correlation ID
   y logs.
+- `/health`: la regla del servicio de salud con dependencias fijas, los adaptadores de
+  MongoDB y Redis con clientes de prueba (responde, falla o supera el timeout) y el
+  endpoint con `200` y `503`.
+- Logs: `LOG_LEVEL`, formato de `logging.json`, `HIT`/`MISS` sin datos del documento, y el
+  `lifespan` con inicio, apagado y el nivel aplicado.
 
 No se testea, a propósito: las llamadas reales a MongoDB y Redis y el cierre de las
 conexiones al apagar. Ver *Deuda técnica*.
@@ -257,14 +298,17 @@ app/
 ├── main.py                      # ensamblado: routers, middleware, handlers de error
 ├── controllers/                 # CAPA 1 — HTTP
 │   ├── pdf_controller.py
-│   └── health_controller.py
+│   └── health_controller.py     # 200 o 503 según SaludService
 ├── schemas/                     # CAPA 1 — contrato público (Pydantic)
 │   ├── pdf.py
+│   ├── health.py
 │   └── error.py
 ├── services/                    # CAPA 2 — reglas de negocio
-│   └── consulta_service.py
-├── models/                      # CAPA 2 — entidad de dominio (Python puro)
-│   └── pdf_document.py
+│   ├── consulta_service.py
+│   └── salud_service.py         # cuándo el servicio está fuera de servicio
+├── models/                      # CAPA 2 — entidades de dominio (Python puro)
+│   ├── pdf_document.py
+│   └── estado_de_salud.py
 └── core/                        # CAPA 3 + transversal
     ├── repository.py            # puerto abstracto
     ├── in_memory_repository.py  # adaptador en memoria (tests)
@@ -273,10 +317,12 @@ app/
     ├── cache.py                 # puerto de caché
     ├── in_memory_cache.py       # adaptador en memoria (tests)
     ├── redis_cache.py           # adaptador Redis
+    ├── dependencia.py           # puerto de /health
+    ├── dependencias.py          # adaptadores de /health (ping a MongoDB y Redis)
     ├── database.py              # creación de clientes
     ├── composition.py           # inyección de dependencias y cierre de conexiones
     ├── config.py                # configuración
-    ├── logs.py                  # logs a stdout con correlation_id
+    ├── logs.py                  # carga logging.json y agrega el correlation_id
     └── exceptions.py            # errores de dominio
 ```
 
@@ -347,8 +393,9 @@ El registro completo del desarrollo, paso por paso, está en [BITACORA.md](BITAC
   documento de MongoDB a la entidad de dominio y la traducción de los errores de cada
   driver. Las consultas reales se cubrirían con tests de integración contra contenedores
   efímeros.
-- **El cierre de conexiones al apagar no tiene test.** Se verificó a mano creando los
-  clientes reales y cerrándolos; testearlo en la suite exigiría parchear la composición.
+- **El cierre de conexiones al apagar no tiene test.** El `lifespan` sí está cubierto
+  (inicio, apagado y nivel de logs), pero sin clientes abiertos. El cierre real se verificó
+  en el stack de integración: `docker compose stop` → `apagado completo` y código 0.
 - **La caché no simula vencimiento en los tests.** `InMemoryCache` guarda sin expirar: el
   TTL es responsabilidad de Redis.
 - **La colección de MongoDB no se crea con índices desde este servicio.** Las consultas por
