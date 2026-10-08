@@ -1,6 +1,6 @@
 [project]
 name = "persistencia-consultas"
-version = "1.0.3"
+version = "1.0.4"
 description = "Microservicio de consultas (lectura) de documentos PDF, con MongoDB + caché Redis."
 readme = "README.md"
 requires-python = ">=3.12"
