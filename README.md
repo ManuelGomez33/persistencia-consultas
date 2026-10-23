@@ -24,7 +24,7 @@ No hace, a propósito:
 
 ## Endpoints
 
-Contrato compartido `microservicios-pdf` v1.2.0 (en el repo `integracion`).
+Contrato compartido `microservicios-pdf` v1.4.0 (en el repo `integracion`).
 
 | Método | Ruta | Descripción |
 |---|---|---|
