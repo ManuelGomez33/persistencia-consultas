@@ -36,3 +36,21 @@ def test_log_level_invalido_impide_arrancar(monkeypatch):
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_settings_lee_la_integracion_con_consul(monkeypatch, tmp_path):
+    token_file = tmp_path / "microservices.token"
+    token_file.write_text("secret-token", encoding="utf-8")
+    monkeypatch.setenv("CONSUL_ENABLED", "true")
+    monkeypatch.setenv("CONSUL_HTTP_ADDR", "http://consul:8500")
+    monkeypatch.setenv("CONSUL_HTTP_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("CONSUL_SERVICE_ADDRESS", "persistencia-consultas")
+    monkeypatch.setenv("CONSUL_SERVICE_PORT", "8000")
+
+    settings = Settings()
+
+    assert settings.consul_enabled is True
+    assert settings.consul_http_addr == "http://consul:8500"
+    assert settings.consul_http_token_file == str(token_file)
+    assert settings.consul_service_address == "persistencia-consultas"
+    assert settings.consul_service_port == 8000

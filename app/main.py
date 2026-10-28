@@ -1,4 +1,5 @@
 import logging
+import socket
 import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -12,6 +13,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.controllers import health_controller, pdf_controller
 from app.core.composition import cerrar_conexiones, obtener_settings
+from app.core.config import Settings
+from app.core.consul_registry import ConsulRegistry
 from app.core.exceptions import DomainError
 from app.core.logs import configurar_logs, correlation_id_actual
 from app.schemas.error import ErrorDetail, ErrorResponse
@@ -26,14 +29,33 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     # Construir Settings acá hace que una configuración incompleta falle al arrancar
     # y no en la primera consulta.
-    logging.getLogger().setLevel(obtener_settings().log_level)
+    settings = obtener_settings()
+    logging.getLogger().setLevel(settings.log_level)
+    registry = _consul_registry(settings)
+    if registry:
+        await registry.register()
+        logger.info("servicio registrado en Consul")
     logger.info("servicio iniciado")
-    yield
-    # uvicorn llega acá ante SIGTERM, después de cerrar el puerto y terminar las
-    # consultas en curso (12-Factor IX).
-    logger.info("apagado iniciado")
-    await cerrar_conexiones()
-    logger.info("apagado completo")
+    try:
+        yield
+    finally:
+        # uvicorn llega acá ante SIGTERM, después de cerrar el puerto y terminar las
+        # consultas en curso (12-Factor IX).
+        logger.info("apagado iniciado")
+        if registry:
+            try:
+                await registry.deregister()
+            except Exception:
+                logger.exception("no se pudo deregistrar el servicio de Consul")
+        await cerrar_conexiones()
+        logger.info("apagado completo")
+
+
+def _consul_registry(settings: Settings) -> ConsulRegistry | None:
+    if not settings.consul_enabled:
+        return None
+    instance_id = f"persistencia-consultas-{socket.gethostname()}"
+    return ConsulRegistry(settings=settings, instance_id=instance_id)
 
 
 app = FastAPI(

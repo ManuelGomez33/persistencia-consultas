@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.composition import obtener_settings
+from app.core.consul_registry import ConsulRegistry
 from app.main import app
 
 
@@ -34,3 +35,26 @@ def test_el_lifespan_aplica_log_level(monkeypatch):
 
     with TestClient(app):
         assert logging.getLogger().level == logging.DEBUG
+
+
+def test_consul_se_registra_al_inicio_y_deregistra_al_apagar(monkeypatch, tmp_path):
+    eventos = []
+    token_file = tmp_path / "microservices.token"
+    token_file.write_text("test-token", encoding="utf-8")
+    monkeypatch.setenv("CONSUL_ENABLED", "true")
+    monkeypatch.setenv("CONSUL_HTTP_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("CONSUL_SERVICE_ADDRESS", "persistencia-consultas")
+
+    async def registrar(self):
+        eventos.append("registrado")
+
+    async def deregistrar(self):
+        eventos.append("deregistrado")
+
+    monkeypatch.setattr(ConsulRegistry, "register", registrar)
+    monkeypatch.setattr(ConsulRegistry, "deregister", deregistrar)
+
+    with TestClient(app):
+        assert eventos == ["registrado"]
+
+    assert eventos == ["registrado", "deregistrado"]
