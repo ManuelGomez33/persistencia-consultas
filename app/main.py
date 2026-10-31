@@ -61,7 +61,7 @@ def _consul_registry(settings: Settings) -> ConsulRegistry | None:
 app = FastAPI(
     title="persistencia-consultas",
     description="Consulta de documentos PDF con MongoDB y caché Redis.",
-    version="1.0.4",
+    version="1.0.5",
     lifespan=lifespan,
 )
 

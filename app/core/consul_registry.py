@@ -57,13 +57,8 @@ class ConsulRegistry:
             "Name": service_name,
             "Address": address,
             "Port": port,
-            "Tags": [
-                "traefik.enable=true",
-                f"traefik.http.routers.{service_name}.entrypoints=https",
-                f"traefik.http.routers.{service_name}.rule=Host(`{service_name}.localhost`)",
-                f"traefik.http.routers.{service_name}.tls=true",
-                f"traefik.http.services.{service_name}.loadbalancer.server.port={port}",
-            ],
+            # Interno: sin etiquetas de Traefik (solo el orquestador es público).
+            "Tags": [],
             "Checks": [
                 {
                     "Name": "HTTP health check",

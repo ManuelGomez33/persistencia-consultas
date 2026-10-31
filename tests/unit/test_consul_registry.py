@@ -27,7 +27,7 @@ def crear_settings(tmp_path: Path) -> Settings:
 
 
 @pytest.mark.asyncio
-async def test_registra_la_instancia_con_health_check_y_datos_traefik(tmp_path):
+async def test_registra_la_instancia_con_health_check_y_sin_datos_traefik(tmp_path):
     requests = []
 
     async def responder(request: httpx.Request) -> httpx.Response:
@@ -52,13 +52,8 @@ async def test_registra_la_instancia_con_health_check_y_datos_traefik(tmp_path):
         "Name": "persistencia-consultas",
         "Address": "persistencia-consultas",
         "Port": 8000,
-        "Tags": [
-            "traefik.enable=true",
-            "traefik.http.routers.persistencia-consultas.entrypoints=https",
-            "traefik.http.routers.persistencia-consultas.rule=Host(`persistencia-consultas.localhost`)",
-            "traefik.http.routers.persistencia-consultas.tls=true",
-            "traefik.http.services.persistencia-consultas.loadbalancer.server.port=8000",
-        ],
+        # Servicio interno: sin etiquetas de Traefik (solo el orquestador es público).
+        "Tags": [],
         "Checks": [
             {
                 "Name": "HTTP health check",
