@@ -1,11 +1,13 @@
+# Compose de este servicio solo. Va encima de la infraestructura compartida (repo
+# dockers: Consul, Traefik, MongoDB y Redis), que se levanta primero. El sistema completo
+# se levanta con el compose del repo integracion. Interno: no publica puertos.
+name: persistencia-consultas
+
 services:
   persistencia-consultas:
     build: .
-    ports:
-      - "8000:8000"
     environment:
-      # Nombres de servicio de esta misma red, no secretos: se definen acá para que un
-      # clon limpio levante sin configuración previa.
+      # Nombres de servicio de la red redutn, no secretos.
       MONGO_URI: mongodb://mongodb:27017
       MONGO_DATABASE: pdfs_db
       MONGO_COLLECTION: pdfs
@@ -14,48 +16,17 @@ services:
       CONSUL_ENABLED: "true"
       CONSUL_HTTP_ADDR: http://consul:8500
       CONSUL_HTTP_TOKEN_FILE: /run/secrets/consul_microservices_token
+      CONSUL_SERVICE_ADDRESS: persistencia-consultas
+      CONSUL_SERVICE_PORT: "8000"
     secrets:
       - consul_microservices_token
     networks:
-      - default
       - redutn
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # MongoDB y Redis no publican puertos en el host: el servicio los alcanza por nombre
-  # dentro de la red del compose, y la infraestructura del equipo (Traefik) ya usa 27017
-  # y 6379 como entrypoints TCP.
-  mongodb:
-    image: mongo:7.0
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
 networks:
   redutn:
     external: true
     name: redutn
-
-volumes:
-  mongo_data:
-  redis_data:
 
 secrets:
   consul_microservices_token:
