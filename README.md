@@ -138,20 +138,21 @@ código 0 (probado con la imagen `1.0.2`).
 
 ## Levantar con Docker (recomendado)
 
-Levanta el servicio junto con MongoDB y Redis. Es la única forma de correrlo sin instalar
-nada más que Docker.
+Levanta solo este servicio, sobre la infraestructura compartida del repo `dockers`
+(Consul, Traefik, MongoDB y Redis), que se levanta antes con `docker compose up -d --wait`
+desde esa carpeta. Usa la misma MongoDB y el mismo Redis que `persistencia-actualizaciones`
+(lo que una escribe, la otra lo lee) y se registra en Consul con el token que deja la
+infraestructura en `../dockers/consul/generated/`. El sistema completo se levanta con el
+compose de `integracion`.
 
 ```bash
 docker compose up --build -d
-```
-
-El servicio queda en <http://localhost:8000>. Para ver los logs y para detenerlo:
-
-```bash
 docker compose logs -f persistencia-consultas
-docker compose down            # conserva los datos
-docker compose down -v         # borra también los volúmenes
+docker compose down
 ```
+
+Es interno: no publica puertos en el host. Se alcanza por nombre dentro de la red `redutn`
+(`http://persistencia-consultas:8000`).
 
 La versión del servicio es la de `pyproject.toml` (1.0.5): es la que muestra Swagger en
 `/docs` y el tag de la imagen. `tests/integration/test_openapi.py` verifica que
