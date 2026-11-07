@@ -4,7 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from redis.asyncio import Redis
 
 from app.core.cached_repository import CachedPdfRepository
-from app.core.config import Settings
+from app.core.config import Settings, cargar_settings
 from app.core.database import crear_cliente_mongo, crear_cliente_redis, obtener_coleccion
 from app.core.dependencias import MongoDependencia, RedisDependencia
 from app.core.mongo_repository import MongoPdfRepository
@@ -15,7 +15,7 @@ from app.services.salud_service import SaludService
 
 @lru_cache
 def obtener_settings() -> Settings:
-    return Settings()
+    return cargar_settings()
 
 
 @lru_cache

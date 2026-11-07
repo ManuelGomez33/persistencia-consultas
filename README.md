@@ -154,11 +154,11 @@ docker compose down
 Es interno: no publica puertos en el host. Se alcanza por nombre dentro de la red `redutn`
 (`http://persistencia-consultas:8000`).
 
-La versión del servicio es la de `pyproject.toml` (1.0.5): es la que muestra Swagger en
+La versión del servicio es la de `pyproject.toml` (1.1.0): es la que muestra Swagger en
 `/docs` y el tag de la imagen. `tests/integration/test_openapi.py` verifica que
 `FastAPI(version=...)` en `app/main.py` coincida con `pyproject.toml`; en una versión
 nueva se cambian los dos.
-En la integración la imagen se publica como `persistencia-consultas:1.0.5`.
+En la integración la imagen se publica como `persistencia-consultas:1.1.0`.
 
 ## Levantar sin Docker
 
@@ -190,6 +190,22 @@ Todas son obligatorias salvo `LOG_LEVEL`: si falta alguna, el servicio no arranc
 El archivo `.env` está en `.gitignore` y nunca se versiona. `docker-compose.yml` define
 estos valores directamente, porque apuntan a los servicios de su propia red y no son
 secretos.
+
+### Configuración desde Consul (contrato 1.6.0)
+
+Con `CONSUL_ENABLED=true`, las variables de la tabla salen del KV de Consul, bajo
+`config/persistencia-consultas/` (por ejemplo `config/persistencia-consultas/REDIS_TTL_SECONDS`), y tienen prioridad
+sobre el entorno. Del entorno solo llega cómo conectarse a Consul: `CONSUL_ENABLED`,
+`CONSUL_HTTP_ADDR` y `CONSUL_HTTP_TOKEN_FILE` (el token, como Docker secret).
+`CONSUL_SERVICE_ADDRESS` y `CONSUL_SERVICE_PORT` también pueden venir del KV.
+
+- Las claves las carga el servicio `consul-config` del compose de integración, desde
+  `integracion/env/consultas.env`.
+- Si no hay claves bajo `config/persistencia-consultas/` o Consul no responde, el servicio no
+  arranca: la configuración no se inventa.
+- Sin Consul (tests y desarrollo local), todo sale del entorno, como antes.
+- Lo implementan `app/core/consul_config.py` (lee el KV) y `cargar_settings()` en
+  `app/core/config.py`.
 
 ## Cómo comprobar que funciona
 

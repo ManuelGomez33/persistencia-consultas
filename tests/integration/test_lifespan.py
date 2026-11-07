@@ -44,6 +44,8 @@ def test_consul_se_registra_al_inicio_y_deregistra_al_apagar(monkeypatch, tmp_pa
     monkeypatch.setenv("CONSUL_ENABLED", "true")
     monkeypatch.setenv("CONSUL_HTTP_TOKEN_FILE", str(token_file))
     monkeypatch.setenv("CONSUL_SERVICE_ADDRESS", "persistencia-consultas")
+    # La configuración ya está en el entorno; el KV de Consul no agrega claves.
+    monkeypatch.setattr("app.core.config.leer_config_de_consul", lambda *_: {}, raising=False)
 
     async def registrar(self):
         eventos.append("registrado")
