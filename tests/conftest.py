@@ -14,6 +14,8 @@ def entorno_de_test(monkeypatch):
     de configuración local de quien desarrolla cambiaría el resultado de los tests.
     """
     monkeypatch.setitem(Settings.model_config, "env_file", None)
+    # Sin Consul salvo que el test lo pida: un .env local no lo activa.
+    monkeypatch.setenv("CONSUL_ENABLED", "false")
     monkeypatch.setenv("MONGO_URI", "mongodb://localhost:27017")
     monkeypatch.setenv("MONGO_DATABASE", "pdfs_test")
     monkeypatch.setenv("MONGO_COLLECTION", "pdfs")
