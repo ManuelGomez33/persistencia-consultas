@@ -154,11 +154,11 @@ docker compose down
 Es interno: no publica puertos en el host. Se alcanza por nombre dentro de la red `redutn`
 (`http://persistencia-consultas:8000`).
 
-La versión del servicio es la de `pyproject.toml` (1.0.5): es la que muestra Swagger en
+La versión del servicio es la de `pyproject.toml` (1.1.0): es la que muestra Swagger en
 `/docs` y el tag de la imagen. `tests/integration/test_openapi.py` verifica que
 `FastAPI(version=...)` en `app/main.py` coincida con `pyproject.toml`; en una versión
 nueva se cambian los dos.
-En la integración la imagen se publica como `persistencia-consultas:1.0.5`.
+En la integración la imagen se publica como `persistencia-consultas:1.1.0`.
 
 ## Levantar sin Docker
 
