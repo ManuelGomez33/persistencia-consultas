@@ -3,7 +3,8 @@ import asyncio
 from pymongo.errors import ServerSelectionTimeoutError
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-from app.core.dependencias import MongoDependencia, RedisDependencia
+from app.core.mongo_health_check import MongoHealthCheck
+from app.core.redis_health_check import RedisHealthCheck
 
 
 class AdminMongo:
@@ -37,26 +38,26 @@ class ClienteRedis:
 
 
 async def test_mongo_disponible_si_responde_el_ping():
-    assert await MongoDependencia(ClienteMongo(AdminMongo())).disponible()
+    assert await MongoHealthCheck(ClienteMongo(AdminMongo())).disponible()
 
 
 async def test_mongo_caido_si_el_ping_falla():
     error = ServerSelectionTimeoutError("sin servidor")
 
-    assert not await MongoDependencia(ClienteMongo(AdminMongo(error=error))).disponible()
+    assert not await MongoHealthCheck(ClienteMongo(AdminMongo(error=error))).disponible()
 
 
 async def test_mongo_caido_si_el_ping_supera_el_timeout():
     lento = ClienteMongo(AdminMongo(demora=1))
 
-    assert not await MongoDependencia(lento, timeout_segundos=0.01).disponible()
+    assert not await MongoHealthCheck(lento, timeout_segundos=0.01).disponible()
 
 
 async def test_redis_disponible_si_responde_el_ping():
-    assert await RedisDependencia(ClienteRedis()).disponible()
+    assert await RedisHealthCheck(ClienteRedis()).disponible()
 
 
 async def test_redis_caido_si_el_ping_falla():
     error = RedisConnectionError("sin conexion")
 
-    assert not await RedisDependencia(ClienteRedis(error=error)).disponible()
+    assert not await RedisHealthCheck(ClienteRedis(error=error)).disponible()
