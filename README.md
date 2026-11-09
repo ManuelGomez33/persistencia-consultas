@@ -340,8 +340,9 @@ app/
     ├── cache.py                 # puerto de caché
     ├── in_memory_cache.py       # adaptador en memoria (tests)
     ├── redis_cache.py           # adaptador Redis
-    ├── dependencia.py           # puerto de /health
-    ├── dependencias.py          # adaptadores de /health (ping a MongoDB y Redis)
+    ├── health_check.py          # puerto de /health
+    ├── mongo_health_check.py    # adaptador de /health: ping a MongoDB
+    ├── redis_health_check.py    # adaptador de /health: ping a Redis
     ├── database.py              # creación de clientes
     ├── composition.py           # inyección de dependencias y cierre de conexiones
     ├── config.py                # configuración
@@ -356,6 +357,25 @@ Flujo: `controller → service → repository → base de datos`.
 - El modelo de dominio no usa Pydantic ni decoradores de persistencia.
 - Los schemas son independientes de la entidad de dominio.
 - Las implementaciones concretas se eligen en un único lugar: `app/core/composition.py`.
+
+### Patrón CQRS: lectura y escritura separadas
+
+Separar `persistencia-consultas` de `persistencia-actualizaciones` es aplicar **CQRS**
+(*Command Query Responsibility Segregation*): las operaciones que cambian datos
+(*commands*: crear, renombrar, borrar) y las que solo los leen (*queries*: listar, buscar
+por ID o por checksum) van en servicios distintos.
+
+- **Cada lado se escala por separado.** Las lecturas son más frecuentes: se pueden sumar
+  réplicas de consultas sin tocar las escrituras.
+- **Cada lado se optimiza para lo suyo.** Consultas usa caché (cache-aside en Redis);
+  actualizaciones usa locks e índice único y solo invalida la caché.
+- **Un solo escritor.** Solo actualizaciones escribe en la colección; consultas no tiene
+  ningún endpoint que modifique datos.
+- **Lo que queda igual:** los dos lados comparten la misma colección de MongoDB (no hay
+  una base aparte para lectura) y la caché se invalida al escribir, así que una lectura
+  ve el cambio en cuanto termina la escritura. La excepción es Redis caído durante la
+  escritura (*fail-open*): no se invalida y una copia vieja puede durar hasta
+  `REDIS_TTL_SECONDS`.
 
 ### Caché cache-aside
 
