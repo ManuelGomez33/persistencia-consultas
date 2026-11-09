@@ -6,9 +6,10 @@ from redis.asyncio import Redis
 from app.core.cached_repository import CachedPdfRepository
 from app.core.config import Settings, cargar_settings
 from app.core.database import crear_cliente_mongo, crear_cliente_redis, obtener_coleccion
-from app.core.dependencias import MongoDependencia, RedisDependencia
+from app.core.mongo_health_check import MongoHealthCheck
 from app.core.mongo_repository import MongoPdfRepository
 from app.core.redis_cache import RedisCache
+from app.core.redis_health_check import RedisHealthCheck
 from app.services.consulta_service import ConsultaPdfService
 from app.services.salud_service import SaludService
 
@@ -45,7 +46,7 @@ def obtener_servicio() -> ConsultaPdfService:
 @lru_cache
 def obtener_servicio_salud() -> SaludService:
     return SaludService(
-        MongoDependencia(obtener_cliente_mongo()), RedisDependencia(obtener_cliente_redis())
+        MongoHealthCheck(obtener_cliente_mongo()), RedisHealthCheck(obtener_cliente_redis())
     )
 
 

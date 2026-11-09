@@ -11,7 +11,7 @@ from app.main import app
 from app.models.pdf_document import PdfDocument
 from app.services.consulta_service import ConsultaPdfService
 from app.services.salud_service import SaludService
-from tests.dobles import DependenciaFija
+from tests.dobles import HealthCheckFijo
 
 ID_EXISTENTE = "8f6f7c3e-12d5-4f57-9c6c-123456789abc"
 CHECKSUM_EXISTENTE = "a7f5f35426b927411fc9231b56382173"
@@ -22,7 +22,7 @@ def cliente(documento):
     servicio = ConsultaPdfService(InMemoryPdfRepository([documento()]))
     app.dependency_overrides[obtener_servicio] = lambda: servicio
     app.dependency_overrides[obtener_servicio_salud] = lambda: SaludService(
-        DependenciaFija(True), DependenciaFija(True)
+        HealthCheckFijo(True), HealthCheckFijo(True)
     )
     with TestClient(app) as cliente_de_prueba:
         yield cliente_de_prueba
@@ -41,7 +41,7 @@ def test_health_responde_ok(cliente):
 
 def test_health_con_redis_caido_sigue_ok_e_informa(cliente):
     app.dependency_overrides[obtener_servicio_salud] = lambda: SaludService(
-        DependenciaFija(True), DependenciaFija(False)
+        HealthCheckFijo(True), HealthCheckFijo(False)
     )
 
     respuesta = cliente.get("/health")
@@ -55,7 +55,7 @@ def test_health_con_redis_caido_sigue_ok_e_informa(cliente):
 
 def test_health_con_mongodb_caido_responde_503(cliente):
     app.dependency_overrides[obtener_servicio_salud] = lambda: SaludService(
-        DependenciaFija(False), DependenciaFija(True)
+        HealthCheckFijo(False), HealthCheckFijo(True)
     )
 
     respuesta = cliente.get("/health")
